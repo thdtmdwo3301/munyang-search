@@ -1,0 +1,356 @@
+<title>Fusion Attention Mechanism</title>
+
+<style>
+  :root {
+    --paper: #F3F5F7;
+    --paper-elev: #FFFFFF;
+    --ink: #1B222B;
+    --ink-muted: #5B6572;
+    --line: #C7CDD6;
+    --frost-fill: #E3E9F1;
+    --frost-border: #7C90AC;
+    --ember-fill: #FBF0DA;
+    --ember-border: #B8892F;
+    --signal: #C0392B;
+    --signal-fill: #FBE4E1;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Pretendard Variable", Pretendard,
+      "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #14181F;
+      --paper-elev: #1C222B;
+      --ink: #E8EAED;
+      --ink-muted: #9AA3AF;
+      --line: #333B47;
+      --frost-fill: #232B3A;
+      --frost-border: #93A8C4;
+      --ember-fill: #332A16;
+      --ember-border: #D9AE5C;
+      --signal: #E8695A;
+      --signal-fill: #3A2420;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #14181F;
+    --paper-elev: #1C222B;
+    --ink: #E8EAED;
+    --ink-muted: #9AA3AF;
+    --line: #333B47;
+    --frost-fill: #232B3A;
+    --frost-border: #93A8C4;
+    --ember-fill: #332A16;
+    --ember-border: #D9AE5C;
+    --signal: #E8695A;
+    --signal-fill: #3A2420;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    margin: 0;
+  }
+  .page {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 56px 24px 80px;
+  }
+  .eyebrow {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    font-weight: 600;
+    margin: 0 0 8px;
+  }
+  h1 {
+    font-size: 26px;
+    line-height: 1.3;
+    margin: 0 0 12px;
+    text-wrap: balance;
+    letter-spacing: -0.01em;
+  }
+  .lede {
+    font-size: 15px;
+    line-height: 1.65;
+    color: var(--ink-muted);
+    max-width: 62ch;
+    margin: 0 0 44px;
+  }
+  .lede code, .specs code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    background: var(--paper-elev);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0.05em 0.35em;
+  }
+  figure {
+    margin: 0 0 12px;
+    background: var(--paper-elev);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 20px 20px 18px;
+  }
+  figure + figure { margin-top: 40px; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  figcaption {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--ink-muted);
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+  figcaption b { color: var(--ink); font-weight: 600; }
+
+  .specs {
+    margin-top: 20px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    font-size: 13px;
+  }
+  .specs dt {
+    background: var(--paper-elev);
+    padding: 10px 14px;
+    color: var(--ink-muted);
+    font-weight: 600;
+  }
+  .specs dd {
+    background: var(--paper-elev);
+    margin: 0;
+    padding: 10px 14px 10px 0;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+  }
+  .specs > div { display: contents; }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    margin: 28px 0 0;
+    font-size: 12.5px;
+    color: var(--ink-muted);
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; flex: none; }
+
+  section + section { margin-top: 56px; }
+  h2 {
+    font-size: 18px;
+    margin: 0 0 6px;
+    letter-spacing: -0.01em;
+  }
+  .section-note {
+    font-size: 13.5px;
+    color: var(--ink-muted);
+    margin: 0 0 20px;
+    max-width: 60ch;
+  }
+</style>
+
+<div class="page">
+  <p class="eyebrow">전통문양 감성분류 · 최종 배포 모델</p>
+  <h1>이미지+텍스트 융합 구조 — Self-Attention과 앙상블</h1>
+  <p class="lede">
+    이미지 브랜치는 <code>DINOv3</code>를 완전히 얼린 채로 쓰고, 텍스트 브랜치(5개 아키텍처)는
+    end-to-end로 fine-tuning한다. 둘을 <b>토큰 2개짜리 시퀀스</b>로 묶어 self-attention 한 층을
+    태우는 게 핵심 — Q, K, V가 전부 같은 2-토큰 시퀀스에서 나온다.
+  </p>
+
+  <section>
+    <h2>1. 단일 모델 파이프라인</h2>
+    <p class="section-note">텍스트 인코더 하나(예: klue-roberta-large) 기준. 5개 아키텍처가 이 구조를 독립적으로 반복한다.</p>
+
+    <figure>
+      <svg viewBox="0 0 1510 360" role="img" aria-label="이미지는 DINOv3로 고정된 채 인코딩되고 텍스트는 description 텍스트만 fine-tune되는 인코더로 인코딩되며, 이 두 갈래가 왼쪽에서 오른쪽으로 나란히 진행되다가 각각 pooled 벡터로 압축되고 1024차원으로 투영되어 2-토큰 시퀀스로 합쳐지고, 이 시퀀스에 대해 Q=K=V인 self-attention과 residual, LayerNorm을 적용한 뒤 flatten하여 22개 라벨 확률을 sigmoid로 계산하고 그중 상위 5개를 최종 예측으로 고르는 흐름">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+          <marker id="arrow-signal" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--signal)"/>
+          </marker>
+        </defs>
+
+        <g font-family="var(--font-sans)" fill="currentColor">
+          <!-- 이미지 레인 (y center = 95) -->
+          <rect x="30" y="60" width="150" height="70" rx="8" fill="var(--paper)" stroke="var(--line)"/>
+          <text x="105" y="99" text-anchor="middle" font-size="13" font-weight="600">이미지</text>
+
+          <line x1="180" y1="95" x2="216" y2="95" stroke="currentColor" marker-end="url(#arrow)"/>
+
+          <rect x="220" y="60" width="190" height="70" rx="8" fill="var(--frost-fill)" stroke="var(--frost-border)" stroke-width="1.5"/>
+          <text x="315" y="83" text-anchor="middle" font-size="12.5" font-weight="700">DINOv3 (ViT-L)</text>
+          <text x="315" y="99" text-anchor="middle" font-size="10.5" fill="var(--ink-muted)">frozen — 가중치 고정</text>
+          <text x="315" y="114" text-anchor="middle" font-size="10" font-family="var(--font-mono)" fill="var(--ink-muted)">grad = 0</text>
+
+          <line x1="410" y1="95" x2="446" y2="95" stroke="currentColor" marker-end="url(#arrow)"/>
+
+          <rect x="450" y="60" width="170" height="70" rx="8" fill="var(--paper)" stroke="var(--line)"/>
+          <text x="535" y="90" text-anchor="middle" font-size="11.5" font-weight="600">image_proj</text>
+          <text x="535" y="106" text-anchor="middle" font-size="10.5" font-family="var(--font-mono)" fill="var(--ink-muted)">Linear(2048→1024)</text>
+
+          <!-- 텍스트 레인 (y center = 275) -->
+          <rect x="30" y="240" width="150" height="70" rx="8" fill="var(--paper)" stroke="var(--line)"/>
+          <text x="105" y="279" text-anchor="middle" font-size="13" font-weight="600">Description</text>
+
+          <line x1="180" y1="275" x2="216" y2="275" stroke="currentColor" marker-end="url(#arrow)"/>
+
+          <rect x="220" y="240" width="190" height="70" rx="8" fill="var(--ember-fill)" stroke="var(--ember-border)" stroke-width="1.5"/>
+          <text x="315" y="263" text-anchor="middle" font-size="12.5" font-weight="700">텍스트 인코더</text>
+          <text x="315" y="279" text-anchor="middle" font-size="10.5" fill="var(--ink-muted)">fine-tune — 5개 아키텍처</text>
+          <text x="315" y="294" text-anchor="middle" font-size="10" font-family="var(--font-mono)" fill="var(--ink-muted)">전체 가중치 학습 (freeze 없음)</text>
+
+          <line x1="410" y1="275" x2="446" y2="275" stroke="currentColor" marker-end="url(#arrow)"/>
+
+          <rect x="450" y="240" width="170" height="70" rx="8" fill="var(--paper)" stroke="var(--line)"/>
+          <text x="535" y="270" text-anchor="middle" font-size="11.5" font-weight="600">text_proj</text>
+          <text x="535" y="286" text-anchor="middle" font-size="10.5" font-family="var(--font-mono)" fill="var(--ink-muted)">Linear(768~1024→1024)</text>
+
+          <!-- 두 레인이 2-토큰 시퀀스로 수렴 -->
+          <path d="M 620 95 C 645 95, 650 150, 660 165" fill="none" stroke="currentColor" marker-end="url(#arrow)"/>
+          <path d="M 620 275 C 645 275, 650 220, 660 205" fill="none" stroke="currentColor" marker-end="url(#arrow)"/>
+
+          <rect x="660" y="150" width="160" height="70" rx="8" fill="var(--paper)" stroke="var(--line)" stroke-width="1.5"/>
+          <text x="740" y="180" text-anchor="middle" font-size="12" font-weight="600">2-토큰 시퀀스</text>
+          <text x="740" y="197" text-anchor="middle" font-size="10" font-family="var(--font-mono)" fill="var(--ink-muted)">[img_tok, text_tok]</text>
+
+          <line x1="820" y1="185" x2="856" y2="185" stroke="currentColor" marker-end="url(#arrow)"/>
+
+          <!-- Attention block, highlighted -->
+          <rect x="860" y="50" width="380" height="270" rx="10" fill="var(--signal-fill)" stroke="var(--signal)" stroke-width="1.75"/>
+          <text x="882" y="78" font-size="13" font-weight="700" fill="var(--signal)">Self-Attention</text>
+          <text x="882" y="98" font-size="12" font-family="var(--font-mono)">Q = K = V = seq</text>
+          <text x="882" y="116" font-size="10.5" font-family="var(--font-mono)" fill="var(--ink-muted)">MultiheadAttention(dim=1024, heads=8)</text>
+
+          <!-- mini 2-node attention graph -->
+          <g font-size="11" font-weight="600">
+            <!-- self loops -->
+            <path d="M 977 229 C 955 207, 955 177, 981 171" fill="none" stroke="currentColor" marker-end="url(#arrow)"/>
+            <path d="M 1193 171 C 1219 177, 1219 207, 1197 229" fill="none" stroke="currentColor" marker-end="url(#arrow)"/>
+            <!-- cross edges -->
+            <path d="M 1003 189 C 1065 175, 1125 175, 1187 189" fill="none" stroke="currentColor" marker-end="url(#arrow)"/>
+            <path d="M 1187 211 C 1125 225, 1065 225, 1003 211" fill="none" stroke="currentColor" marker-end="url(#arrow)"/>
+            <circle cx="990" cy="200" r="20" fill="var(--paper-elev)" stroke="var(--signal)" stroke-width="1.5"/>
+            <text x="990" y="204" text-anchor="middle" fill="var(--ink)">img</text>
+            <circle cx="1180" cy="200" r="20" fill="var(--paper-elev)" stroke="var(--signal)" stroke-width="1.5"/>
+            <text x="1180" y="204" text-anchor="middle" fill="var(--ink)">text</text>
+          </g>
+          <text x="1085" y="258" text-anchor="middle" font-size="10" fill="var(--ink-muted)">토큰 2개가 서로 + 자기 자신을 참고</text>
+          <text x="882" y="300" font-size="10.5" font-family="var(--font-mono)" fill="var(--ink-muted)">residual + LN(seq + attn_out) → flatten 2048-d</text>
+
+          <line x1="1240" y1="185" x2="1276" y2="185" stroke="currentColor" marker-end="url(#arrow-signal)"/>
+
+          <!-- 최종 출력 -->
+          <rect x="1280" y="140" width="200" height="90" rx="8" fill="var(--signal-fill)" stroke="var(--signal)" stroke-width="1.5"/>
+          <text x="1380" y="172" text-anchor="middle" font-size="11.5" font-weight="600" font-family="var(--font-mono)">Linear(2048→22)</text>
+          <text x="1380" y="192" text-anchor="middle" font-size="10.5" fill="var(--ink-muted)">sigmoid → 22개 확률</text>
+          <text x="1380" y="212" text-anchor="middle" font-size="12" font-weight="700" fill="var(--signal)">top-5 감성 라벨</text>
+        </g>
+      </svg>
+
+      <figcaption>
+        <b>Q, K, V가 전부 같은 2-토큰 시퀀스에서 나온다</b> — 텍스트가 query, 이미지가 key/value인
+        cross-attention이 아니라 표준 self-attention. <code>nn.MultiheadAttention</code>이 내부에서
+        자체 학습한 W_q·W_k·W_v(각 1024×1024)로 두 토큰을 각각 투영해 8-head로 나눠 계산하고,
+        결과적으로 두 토큰 모두 [자기 자신, 상대방] 두 값에 대한 가중합을 받는다.
+      </figcaption>
+
+      <dl class="specs">
+        <div><dt>Loss</dt><dd>AsymmetricLoss (γ_neg=4, γ_pos=1, clip=0.05)</dd></div>
+        <div><dt>Optimizer</dt><dd>AdamW, discriminative LR</dd></div>
+        <div><dt>Backbone LR</dt><dd>discriminative (텍스트 인코더는 낮게)</dd></div>
+        <div><dt>Head LR</dt><dd>1e-3</dd></div>
+        <div><dt>Schedule</dt><dd>OneCycleLR (pct_start=0.1)</dd></div>
+        <div><dt>Epoch</dt><dd>모델별 수렴 시점까지</dd></div>
+        <div><dt>Sampler</dt><dd>없음 — natural 분포가 top-5 지표에 유리</dd></div>
+        <div><dt>Split</dt><dd>train 3,954 / val 446 (seed=42)</dd></div>
+      </dl>
+
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--frost-fill);border:1px solid var(--frost-border)"></span>frozen (이미지)</span>
+        <span><span class="swatch" style="background:var(--ember-fill);border:1px solid var(--ember-border)"></span>fine-tune (텍스트)</span>
+        <span><span class="swatch" style="background:var(--signal-fill);border:1px solid var(--signal)"></span>attention / 최종 출력</span>
+      </div>
+    </figure>
+  </section>
+
+  <section>
+    <h2>2. 앙상블 — 5개 모델 → 가중합</h2>
+    <p class="section-note">위 파이프라인을 서로 다른 텍스트 아키텍처 5개로 독립 학습시킨 뒤(전부 description만 입력, 전체 fine-tuning), 확률을 가중합한다 (post-hoc, late fusion — 학습 중 서로 상호작용하지 않음).</p>
+
+    <figure>
+      <svg viewBox="0 0 700 420" role="img" aria-label="klue, xlmr, kcbert, mbert, kobigbird 5개 모델이 각각 독립적으로 예측 확률을 내고, Dirichlet 탐색으로 찾은 가중치로 가중합하여 최종 top-5 라벨을 예측하며 F1@5는 0.8000">
+        <defs>
+          <marker id="arrow2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+          <marker id="arrow2-signal" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--signal)"/>
+          </marker>
+        </defs>
+        <g font-family="var(--font-sans)" fill="currentColor">
+          <!-- 5 model boxes -->
+          <g font-size="12">
+            <rect x="20" y="30" width="120" height="66" rx="8" fill="var(--ember-fill)" stroke="var(--ember-border)"/>
+            <text x="80" y="58" text-anchor="middle" font-weight="700" font-family="var(--font-mono)" font-size="11.5">klue</text>
+            <text x="80" y="76" text-anchor="middle" fill="var(--ink-muted)" font-size="11">F1 = 0.7794</text>
+
+            <rect x="155" y="30" width="120" height="66" rx="8" fill="var(--ember-fill)" stroke="var(--ember-border)"/>
+            <text x="215" y="58" text-anchor="middle" font-weight="700" font-family="var(--font-mono)" font-size="11.5">xlmr</text>
+            <text x="215" y="76" text-anchor="middle" fill="var(--ink-muted)" font-size="11">F1 = 0.7753</text>
+
+            <rect x="290" y="30" width="120" height="66" rx="8" fill="var(--ember-fill)" stroke="var(--ember-border)"/>
+            <text x="350" y="58" text-anchor="middle" font-weight="700" font-family="var(--font-mono)" font-size="11.5">kcbert</text>
+            <text x="350" y="76" text-anchor="middle" fill="var(--ink-muted)" font-size="11">F1 = 0.7682</text>
+
+            <rect x="425" y="30" width="120" height="66" rx="8" fill="var(--ember-fill)" stroke="var(--ember-border)"/>
+            <text x="485" y="58" text-anchor="middle" font-weight="700" font-family="var(--font-mono)" font-size="11.5">mbert</text>
+            <text x="485" y="76" text-anchor="middle" fill="var(--ink-muted)" font-size="11">F1 = 0.7753</text>
+
+            <rect x="560" y="30" width="120" height="66" rx="8" fill="var(--ember-fill)" stroke="var(--ember-border)"/>
+            <text x="620" y="58" text-anchor="middle" font-weight="700" font-family="var(--font-mono)" font-size="11.5">kobigbird</text>
+            <text x="620" y="76" text-anchor="middle" fill="var(--ink-muted)" font-size="11">F1 = 0.7861</text>
+          </g>
+
+          <!-- converging arrows -->
+          <path d="M 80 96 C 80 140, 180 150, 250 178" fill="none" stroke="currentColor" marker-end="url(#arrow2)"/>
+          <path d="M 215 96 C 215 130, 260 150, 300 178" fill="none" stroke="currentColor" marker-end="url(#arrow2)"/>
+          <path d="M 350 96 C 350 130, 350 150, 350 178" fill="none" stroke="currentColor" marker-end="url(#arrow2)"/>
+          <path d="M 485 96 C 485 130, 440 150, 400 178" fill="none" stroke="currentColor" marker-end="url(#arrow2)"/>
+          <path d="M 620 96 C 620 140, 520 150, 450 178" fill="none" stroke="currentColor" marker-end="url(#arrow2)"/>
+
+          <!-- merge box -->
+          <rect x="170" y="182" width="360" height="80" rx="10" fill="var(--paper)" stroke="var(--line)" stroke-width="1.5"/>
+          <text x="350" y="208" text-anchor="middle" font-size="13" font-weight="600">Dirichlet 랜덤서치 가중합</text>
+          <text x="350" y="228" text-anchor="middle" font-size="11.5" font-family="var(--font-mono)" fill="var(--ink-muted)">p = Σ wᵢ · σ(logits_i)</text>
+          <text x="350" y="248" text-anchor="middle" font-size="10.5" font-family="var(--font-mono)" fill="var(--ink-muted)">w = .314/.210/.214/.211/.052</text>
+
+          <line x1="350" y1="262" x2="350" y2="296" stroke="currentColor" marker-end="url(#arrow2-signal)"/>
+
+          <!-- output -->
+          <rect x="180" y="300" width="340" height="70" rx="10" fill="var(--signal-fill)" stroke="var(--signal)" stroke-width="1.75"/>
+          <text x="350" y="330" text-anchor="middle" font-size="13" font-weight="700" fill="var(--signal)">top-5 라벨 예측</text>
+          <text x="350" y="350" text-anchor="middle" font-size="12" font-family="var(--font-mono)">val F1@5 = 0.8000</text>
+        </g>
+      </svg>
+
+      <figcaption>
+        5개 모델은 학습 중 서로의 존재를 모른 채 <b>완전히 독립적으로</b> 학습된다. 앙상블은 학습이
+        전부 끝난 뒤, 저장해둔 val 확률을 불러와 가중치를 랜덤서치(수만 회 샘플링)로 찾는 후처리
+        단계다 — 개별 모델은 전부 0.77~0.78대에 머물지만, 서로 다른 사전학습 코퍼스/아키텍처라
+        오류가 decorrelated되어 앙상블에서 0.80을 넘는다.
+      </figcaption>
+    </figure>
+  </section>
+</div>

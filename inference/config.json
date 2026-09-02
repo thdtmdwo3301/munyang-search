@@ -1,0 +1,55 @@
+{
+  "description": "전통문양 감성분류 - 이미지(DINOv3)+텍스트(5개 한국어/다국어 언어모델, description 텍스트만 사용) 융합 앙상블. val F1@5=0.8000",
+  "image_encoder": "facebook/dinov3-vitl16-pretrain-lvd1689m",
+  "image_dim": 2048,
+  "hidden_dim": 1024,
+  "num_heads": 8,
+  "label_vocab": [
+    "강한", "고급스러운", "고전적인", "귀여운", "깔끔한", "단순한", "독특한", "부드러운",
+    "섬세한", "소박한", "신비한", "우아한", "원초적인", "유려한", "익살스러운", "자연적인",
+    "장식적인", "조화로운", "풍성한", "현대적인", "화려한", "활동적인"
+  ],
+  "models": [
+    {
+      "tag": "klue",
+      "weight_file": "weights/klue.pt",
+      "text_model": "klue/roberta-large",
+      "max_length": 384,
+      "ensemble_weight": 0.3135,
+      "val_f1": 0.7794
+    },
+    {
+      "tag": "xlmr",
+      "weight_file": "weights/xlmr.pt",
+      "text_model": "xlm-roberta-large",
+      "max_length": 512,
+      "ensemble_weight": 0.2099,
+      "val_f1": 0.7753
+    },
+    {
+      "tag": "kcbert",
+      "weight_file": "weights/kcbert.pt",
+      "text_model": "beomi/kcbert-large",
+      "max_length": 300,
+      "ensemble_weight": 0.2143,
+      "val_f1": 0.7682
+    },
+    {
+      "tag": "mbert",
+      "weight_file": "weights/mbert.pt",
+      "text_model": "bert-base-multilingual-cased",
+      "max_length": 512,
+      "ensemble_weight": 0.2106,
+      "val_f1": 0.7753
+    },
+    {
+      "tag": "kobigbird",
+      "weight_file": "weights/kobigbird.pt",
+      "text_model": "monologg/kobigbird-bert-base",
+      "max_length": 512,
+      "ensemble_weight": 0.0518,
+      "val_f1": 0.7861
+    }
+  ],
+  "ensemble_val_f1": 0.8000
+}
