@@ -31,9 +31,6 @@ python inference/infer.py --help
 
 Gradio 실행 방법은 `gradio/README.md`, 추론 구조는 `inference/README.md`와 `inference/docs/`를 참고하세요. 실제 실행에는 별도로 준비한 weights와 모델 캐시가 필요합니다.
 
-## 기준선 기록
-
-기존 프로젝트 문서에는 5개 모델 앙상블의 F1@5 `0.8000`이 기록되어 있습니다. 이 수치는 저장된 validation 확률과 체크포인트가 공개본에서 제외되었으므로, **이 저장소에서 재실행 검증한 수치가 아닙니다**. 따라서 `python train/ensemble.py`만으로 0.8000을 재현한다고 해석해서는 안 됩니다.
 
 ## 주의
 
