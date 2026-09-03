@@ -22,21 +22,47 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "inference"))
 from infer import EnsembleModel  # noqa: E402
 
-FONT_DIR = Path("/usr/share/fonts/truetype/nanum")
-FONT_REGULAR = str(FONT_DIR / "NanumGothic.ttf")
-FONT_BOLD = str(FONT_DIR / "NanumGothicBold.ttf")
+def _find_font(bold=False):
+    names = (
+        ["NanumGothicBold.ttf", "NotoSansCJK-Bold.ttc", "malgunbd.ttf",
+         "NanumGothic.ttf", "NotoSansCJK-Regular.ttc", "malgun.ttf"]
+        if bold else
+        ["NanumGothic.ttf", "NotoSansCJK-Regular.ttc", "malgun.ttf"]
+    )
+    directories = (
+        Path("/usr/share/fonts/truetype/nanum"),
+        Path("/usr/share/fonts/opentype/noto"),
+        Path("C:/Windows/Fonts"),
+        Path.home() / "AppData/Local/Microsoft/Windows/Fonts",
+    )
+    for directory in directories:
+        for name in names:
+            path = directory / name
+            if path.exists():
+                return str(path)
+    return None
+
+FONT_REGULAR = _find_font()
+FONT_BOLD = _find_font(True) or FONT_REGULAR
+
+def _font(path, size):
+    return ImageFont.truetype(path, size) if path else ImageFont.load_default()
 
 PILL_COLORS = {"blue": (66, 133, 244), "green": (52, 168, 83), "red": (234, 67, 53)}
 
 sys.path.insert(0, str(HERE.parent / "train"))
-import dataset as D  # noqa: E402
+try:
+    import dataset as D  # noqa: E402
+    _recs = D.load_records()
+except (ImportError, FileNotFoundError, OSError, KeyError) as exc:
+    print(f"원본 데이터셋을 찾지 못해 자동 description/GT 조회를 비활성화합니다: {exc}")
+    _recs = []
 
 print("모델 로딩 중...")
 model = EnsembleModel()
 print("로딩 완료.")
 
 print("description/GT라벨 조회용 파일명 매핑 만드는 중...")
-_recs = D.load_records()
 FILENAME_TO_DESC = {Path(r["image_path"]).name: r["description"] for r in _recs}
 FILENAME_TO_EMOTIONS = {Path(r["image_path"]).name: r["emotions"] for r in _recs}
 print(f"매핑 {len(FILENAME_TO_DESC)}개 준비 완료.")
@@ -83,8 +109,8 @@ def render_description_image(description, width=560):
     pad_x = 24
     pad_y = 10
     title_gap = 24
-    title_font = ImageFont.truetype(FONT_BOLD, 17)
-    desc_font = ImageFont.truetype(FONT_REGULAR, 14)
+    title_font = _font(FONT_BOLD, 17)
+    desc_font = _font(FONT_REGULAR, 14)
     desc_line_h = 20
     inner_w = width - 2 * pad_x
 
@@ -109,9 +135,9 @@ def render_description_image(description, width=560):
 def render_result_image(sections, summary=None, width=560):
     """sections: [(title, [(text, color_key), ...]), ...] -> 스크린샷과 동일한 스타일의 PNG(PIL Image)."""
     pad = 24
-    title_font = ImageFont.truetype(FONT_BOLD, 17)
-    pill_font = ImageFont.truetype(FONT_REGULAR, 16)
-    summary_font = ImageFont.truetype(FONT_REGULAR, 16)
+    title_font = _font(FONT_BOLD, 17)
+    pill_font = _font(FONT_REGULAR, 16)
+    summary_font = _font(FONT_REGULAR, 16)
 
     pill_h = 40
     pill_gap_x, pill_gap_y = 12, 12
@@ -183,12 +209,12 @@ def render_result_image(sections, summary=None, width=560):
 def autofill_description(image_path):
     """업로드한 이미지 파일명이 데이터셋에 있는 원본이면 description을 자동으로 채워준다."""
     if not image_path:
-        return gr.update()
+        return gr.skip()
     name = Path(image_path).name
     desc = FILENAME_TO_DESC.get(name)
     if desc is None:
-        return gr.update()  # 데이터셋에 없는(새) 이미지면 그대로 둠
-    return gr.update(value=desc)
+        return gr.skip()  # 데이터셋에 없는(새) 이미지면 그대로 둠
+    return desc
 
 
 PAGE_CSS = """
@@ -262,10 +288,10 @@ def _build_card_html(image_path, description, labels, gt, caption=None):
 def predict(image_path, description):
     if not image_path:
         empty = PILL_CSS + '<div class="pill-box">이미지를 업로드하세요.</div>'
-        return empty, None, None, gr.update(value=None), gr.update(value=None)
+        return empty, None, None, None, None
     if not description or not description.strip():
         empty = PILL_CSS + '<div class="pill-box">description을 입력하세요.</div>'
-        return empty, None, None, gr.update(value=None), gr.update(value=None)
+        return empty, None, None, None, None
 
     labels, scores = model.predict(image_path, description, topk=5)
     gt = FILENAME_TO_EMOTIONS.get(Path(image_path).name)
@@ -281,7 +307,7 @@ def predict(image_path, description):
     desc_only_html = f'<img src="{desc_img_uri}" style="max-width:100%;display:block;">'
     desc_html_path = _save_html_file(desc_only_html, name="description")
 
-    return full_html, desc_image, result_image, gr.update(value=html_path), gr.update(value=desc_html_path)
+    return full_html, desc_image, result_image, html_path, desc_html_path
 
 
 def _save_zip_of_htmls(named_htmls):
@@ -303,7 +329,7 @@ def batch_predict(files):
     다운로드는 이미지 하나당 html 파일 하나씩, zip으로 묶어서 제공한다."""
     if not files:
         empty = PILL_CSS + '<div class="pill-box">이미지를 올려주세요.</div>'
-        return empty, gr.update(value=None)
+        return empty, None
     cards_html, skipped, named_htmls = [], [], {}
     for f in files:
         path = f if isinstance(f, str) else getattr(f, "name", None)
@@ -329,14 +355,14 @@ def batch_predict(files):
                     f'{len(skipped)}개는 데이터셋에 없는 이미지라 건너뜀: {_html_lib.escape(skipped_str)}</div>')
     out.append(f'<div style="display:flex;flex-direction:column;gap:16px;">{"".join(cards_html)}</div>')
     full_html = "".join(out)
-    return full_html, gr.update(value=zip_path)
+    return full_html, zip_path
 
 
-with gr.Blocks(title="전통문양 감성분류 (F1@5=0.8022)") as demo:
+with gr.Blocks(title="전통문양 감성분류 (F1@5=0.8000)") as demo:
     gr.Markdown(
         "# 전통문양 감성 분류 데모\n"
-        "이미지(DINOv3, frozen) + 텍스트 4개 모델(klue-roberta / xlm-roberta / kcbert / klue-bert) "
-        "앙상블. val F1@5 = **0.8022**."
+        "이미지(DINOv3, frozen) + 텍스트 5개 모델(KLUE / XLM-R / KcBERT / mBERT / KoBigBird) "
+        "앙상블. 기존 validation F1@5 = **0.8000**."
     )
     with gr.Tabs():
         with gr.Tab("단일 이미지"):
@@ -379,4 +405,4 @@ with gr.Blocks(title="전통문양 감성분류 (F1@5=0.8022)") as demo:
             batch_btn.click(batch_predict, inputs=[batch_files], outputs=batch_outputs)
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860, share=True)
+    demo.launch(server_name="0.0.0.0", server_port=7860, share=False)

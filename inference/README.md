@@ -2,16 +2,20 @@
 
 이미지(DINOv3) + 텍스트(5개 언어모델) 융합 앙상블. **val F1@5 = 0.8000**
 
-**완전히 독립 실행 가능** — 이 폴더 밖의 어떤 코드에도 의존하지 않음 (새 가상환경에서
-`pip install -r requirements.txt` 후 바로 실행되는 것까지 확인함).
+공개 저장소에는 데이터·DINO 특징·체크포인트를 넣지 않았으므로, 자산을 별도로 준비해야 실제 실행할 수 있습니다.
 
 ## 빠른 시작
+
+저장소 루트에서 실행합니다.
+
 ```bash
-cd inference   # (배포 위치에 따라 폴더명이 final_model일 수도 있음)
-python3 -m venv venv && source venv/bin/activate   # (선택) 새 가상환경
-pip install -r requirements.txt
-python infer.py --image /path/to/image.jpg --description "이미지에 대한 한국어 설명"
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r inference/requirements.txt
+python inference/infer.py --image /path/to/image.jpg --description "이미지에 대한 한국어 설명"
 ```
+
+Windows PowerShell에서는 가상환경을 `py -3.11 -m venv .venv`로 만든 뒤
+`.\.venv\Scripts\Activate.ps1`로 활성화합니다.
 
 `--description`에는 문양유형/재질/시대 같은 메타데이터 없이 **순수 설명 문장만** 넣으면 됨
 (학습도 description 텍스트만으로 했음).
@@ -36,9 +40,9 @@ labels, scores = model.predict(image_path, description, topk=5)
 ## 구성
 ```
 inference/
-├── requirements.txt   # pip install -r requirements.txt 로 필요한 것 다 설치됨
+├── requirements.txt   # 저장소 루트에서 pip install -r inference/requirements.txt
 ├── config.json        # 모델 구성/하이퍼파라미터/앙상블 가중치
-├── infer.py            # 단일 인퍼런스 스크립트 (외부 의존성 없음, 이거 하나로 끝)
+├── infer.py            # 단일 이미지 추론 진입점
 ├── README.md           # 이 파일
 ├── weights/
 │   ├── klue.pt         # klue-roberta-large (fine-tuning 설정 튜닝, val F1=0.7794)
@@ -52,8 +56,7 @@ inference/
 ```
 
 ## 의존성
-- `requirements.txt`에 명시된 파이썬 패키지(torch/torchvision/transformers 등) — 버전까지
-  고정돼있고 새 venv에서 설치→실행 테스트 완료.
+- `requirements.txt`에 명시된 파이썬 패키지(torch/torchvision/transformers 등).
 - HuggingFace 모델: `klue/roberta-large`, `xlm-roberta-large`, `beomi/kcbert-large`,
   `bert-base-multilingual-cased`, `monologg/kobigbird-bert-base`,
   `facebook/dinov3-vitl16-pretrain-lvd1689m` — **최초 실행 시** 자동으로 다운로드/캐시됨

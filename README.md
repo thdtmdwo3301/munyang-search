@@ -22,15 +22,67 @@ gradio/      Gradio 데모 코드
 
 따라서 사용자는 권한이 있는 데이터와 모델 파일을 별도로 준비해야 하며, 공개 저장소만으로 학습·추론을 즉시 실행할 수 없습니다. 학습 데이터 경로는 `MUNYANG_DATA_ROOT` 환경변수로 지정합니다.
 
-## 빠른 시작(구조 확인용)
+## 설치·실행 안내
 
-```bash
-pip install -r inference/requirements.txt
-python inference/infer.py --help
+권장 환경은 Python 3.11이며, 기준 실행 환경은 PyTorch 2.5.1/CUDA 12.1입니다.
+
+Windows PowerShell:
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r inference/requirements.txt -r gradio/requirements.txt
 ```
 
-Gradio 실행 방법은 `gradio/README.md`, 추론 구조는 `inference/README.md`와 `inference/docs/`를 참고하세요. 실제 실행에는 별도로 준비한 weights와 모델 캐시가 필요합니다.
+Linux:
 
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r inference/requirements.txt -r gradio/requirements.txt
+```
+
+실제 추론에는 아래 다섯 체크포인트와 Hugging Face 모델 캐시가 필요합니다.
+
+```text
+inference/weights/
+├── klue.pt
+├── xlmr.pt
+├── kcbert.pt
+├── mbert.pt
+└── kobigbird.pt
+```
+
+자산을 준비한 뒤 저장소 루트에서 실행합니다.
+
+```bash
+python inference/infer.py --image /path/to/image.jpg --description "문양 설명"
+python gradio/app_gradio.py
+```
+
+학습 데이터는 다음 구조로 준비하고 `MUNYANG_DATA_ROOT`로 위치를 지정합니다.
+
+```text
+<MUNYANG_DATA_ROOT>/
+├── annotations/
+├── images/
+└── annotations-db/
+```
+
+```powershell
+$env:MUNYANG_DATA_ROOT="D:\data\munyang"
+```
+
+```bash
+export MUNYANG_DATA_ROOT=/path/to/munyang
+```
+
+학습 코드는 `train/`에 있으며 미리 추출한
+`train/dinov3_features/features_train.pt`와 `features_val.pt`를 요구합니다. 학습 결과 확률을
+앙상블하려면 저장소 루트에서 `cd train` 후 `python ensemble.py`를 실행합니다. 세부 추론 구조는
+`inference/README.md`와 `inference/docs/`, 데모 옵션은 `gradio/README.md`를 참고하세요.
 
 ## 주의
 
