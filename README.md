@@ -57,17 +57,19 @@ python inference/prepare_weights.py
 python inference/infer.py --image /path/to/image.jpg --description "문양의 기존 설명문"
 ```
 
-웹 데모:
+### 내 컴퓨터에서 Gradio 실행
+
+위 설치와 가중치 준비를 마친 뒤, 가상환경을 활성화한 상태에서 저장소 루트에서 실행합니다.
 
 ```bash
 python gradio/app_gradio.py
 ```
 
-브라우저에서 `http://localhost:7860`에 접속합니다.
+프로그램을 실행한 컴퓨터의 브라우저에서 `http://localhost:7860`에 접속합니다. 이미지를 업로드하고 설명문을 입력하면 감성/형용사 상위 5개를 확인할 수 있습니다. 사용 중에는 실행 터미널을 열어 둡니다.
 
 ## 상세 안내
 
 - [추론 및 모델별 성능](inference/README.md)
 - [학습 방법 및 실험 설명](train/README.md)
 - [기존 실험 결과](train/RESULT.md)
-- [Gradio 데모](gradio/README.md)
+- [내 컴퓨터에서 Gradio 실행](gradio/README.md)
