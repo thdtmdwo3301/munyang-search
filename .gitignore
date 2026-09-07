@@ -29,3 +29,13 @@ outputs/
 results/
 models/
 hf_cache/
+
+# Published baseline weights (Git LFS); reconstructed xlmr.pt stays local.
+!inference/weights/
+!inference/weights/kcbert.pt
+!inference/weights/klue.pt
+!inference/weights/kobigbird.pt
+!inference/weights/mbert.pt
+!inference/weights/xlmr.pt.part1
+!inference/weights/xlmr.pt.part2
+*.restore

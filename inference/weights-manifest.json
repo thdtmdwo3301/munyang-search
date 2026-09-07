@@ -1,0 +1,72 @@
+{
+  "repository": "thdtmdwo3301/munyang-search",
+  "source_code_commit": "92221a894459f77d39117ad9c6d240799fd0807e",
+  "models": [
+    {
+      "name": "kcbert.pt",
+      "size": 1367313240,
+      "sha256": "7fb6fcb0bf53d4a56695d671eb1a3ce76685ecfd495b9194eb7c8b8964ec8a78",
+      "parts": [
+        {
+          "name": "kcbert.pt",
+          "size": 1367313240,
+          "sha256": "7fb6fcb0bf53d4a56695d671eb1a3ce76685ecfd495b9194eb7c8b8964ec8a78"
+        }
+      ]
+    },
+    {
+      "name": "klue.pt",
+      "size": 1376378909,
+      "sha256": "d172af1dc27f6d3afd605cb0552f79ec22975f43941a582cee7c1dc4fa4dbcd7",
+      "parts": [
+        {
+          "name": "klue.pt",
+          "size": 1376378909,
+          "sha256": "d172af1dc27f6d3afd605cb0552f79ec22975f43941a582cee7c1dc4fa4dbcd7"
+        }
+      ]
+    },
+    {
+      "name": "kobigbird.pt",
+      "size": 483633629,
+      "sha256": "a7781952d66f633baad0986607657a7f6eae077bd680a9dcb92a4134f634b604",
+      "parts": [
+        {
+          "name": "kobigbird.pt",
+          "size": 483633629,
+          "sha256": "a7781952d66f633baad0986607657a7f6eae077bd680a9dcb92a4134f634b604"
+        }
+      ]
+    },
+    {
+      "name": "mbert.pt",
+      "size": 740031233,
+      "sha256": "ff590a6ca6785be8b368b458929f7f2e7d7024cf328618a6af7b72fff7029dee",
+      "parts": [
+        {
+          "name": "mbert.pt",
+          "size": 740031233,
+          "sha256": "ff590a6ca6785be8b368b458929f7f2e7d7024cf328618a6af7b72fff7029dee"
+        }
+      ]
+    },
+    {
+      "name": "xlmr.pt",
+      "size": 2269313066,
+      "sha256": "8d36e5aa307fafbadb060cd9c6da7a59bdee6e278d8f8a66dd2cdf1b89e5e244",
+      "parts": [
+        {
+          "name": "xlmr.pt.part1",
+          "size": 1887436800,
+          "sha256": "3568d3d13758827b2d2cd671d7aee901a44e29e953061a0794f9b728e080ccab"
+        },
+        {
+          "name": "xlmr.pt.part2",
+          "size": 381876266,
+          "sha256": "c23bf05fc7851ec4224b990615323cfa2427f6f67e752547d7d090ecdcfd4cb1"
+        }
+      ]
+    }
+  ],
+  "distribution": "git-lfs"
+}

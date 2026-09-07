@@ -1,0 +1,2 @@
+inference/weights/*.pt filter=lfs diff=lfs merge=lfs -text
+inference/weights/*.pt.part* filter=lfs diff=lfs merge=lfs -text
