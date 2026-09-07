@@ -1,5 +1,21 @@
 # 전통문양 감성 분류 — 이미지+텍스트 융합으로 F1@5 0.80 달성 (2026-08-11, 최종 갱신 2026-08-21)
 
+기존 최종 모델 학습에 사용한 GPU는 **NVIDIA GeForce RTX 3090**입니다. 2026-09-07 재추론은 RTX 3090 1개(24GB)에서 별도로 수행했으며 F1@5 0.8000을 확인했습니다.
+
+## 실행 준비
+
+라이브러리는 저장소 루트에서 `python -m pip install -r requirements.txt`로 설치합니다.
+
+학습에는 원본 `annotations/`, `images/` 데이터와 사전 추출된 DINOv3 특징 `train/dinov3_features/features_train.pt`, `features_val.pt`가 필요합니다. 데이터와 특징 캐시는 저장소에 포함되지 않습니다. `MUNYANG_DATA_ROOT`에 데이터 디렉터리를 지정합니다.
+
+```bash
+export MUNYANG_DATA_ROOT=/path/to/orig_4.4k_260519
+```
+
+Windows PowerShell에서는 `$env:MUNYANG_DATA_ROOT="D:\data\orig_4.4k_260519"`로 지정합니다.
+
+[RESULT.md의 재현 명령](RESULT.md#재현)은 `train/` 디렉터리에서 실행합니다. `ensemble.py`는 재학습·재추론 없이 `features/fusion_{tag}_val.npz`에 저장된 검증 예측값을 평가합니다. 해당 예측 파일은 학습 결과물이며 저장소에 포함되지 않습니다. 학습 없이 배포 가중치로 추론하려면 [추론 안내](../inference/README.md)를 참고합니다.
+
 ## 1. 목표
 이미지 4,400장, 각 이미지에 감성 라벨 정확히 5개(22종 중), 이 5개를 얼마나 잘 맞히는지가
 평가 지표(F1@5, 사실상 top-5 정답률과 같음). **이미지와 텍스트(description) 둘 다 반드시

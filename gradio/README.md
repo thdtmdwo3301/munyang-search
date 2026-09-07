@@ -5,7 +5,8 @@
 weights/를 그대로 불러와 쓰므로(가중치 중복 보관 안 함) 실행 전 `../inference/`가 있어야 한다.
 
 ```bash
-pip install -r inference/requirements.txt -r gradio/requirements.txt
+python -m pip install -r requirements.txt
+python inference/prepare_weights.py
 python gradio/app_gradio.py
 ```
 

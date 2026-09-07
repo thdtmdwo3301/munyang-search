@@ -1,5 +1,5 @@
 """
-전통문양 감성분류 최종 인퍼런스 (이미지 + 텍스트 4개 모델 앙상블, val F1@5=0.8022).
+전통문양 감성분류 최종 인퍼런스 (이미지 + 텍스트 5개 모델 앙상블, val F1@5=0.8000).
 
 이미지 경로 + description 텍스트를 받아서 top-5 감성 라벨을 예측한다.
 필요한 건 전부 이 디렉토리(config.json, weights/*.pt) 안에 있음.
@@ -88,7 +88,7 @@ class EnsembleModel:
         self.image_processor = AutoImageProcessor.from_pretrained(self.config["image_encoder"])
         self.image_encoder = DinoV3ImageEncoder(self.config["image_encoder"]).to(self.device).eval()
 
-        # 4개 텍스트+융합 모델
+        # 5개 텍스트+융합 모델
         self.models = []
         for spec in self.config["models"]:
             tokenizer = AutoTokenizer.from_pretrained(spec["text_model"])

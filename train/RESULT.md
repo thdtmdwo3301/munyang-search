@@ -65,7 +65,7 @@ description-only로 전환 후 처음엔 klue+xlmr+kcbert+klue_bert 4개로 재�
 나왔음(0.8 미달). 새 아키텍처(mbert, kobigbird)를 추가 학습시키고 6개 후보 중 2~6개
 크기의 모든 조합을 Dirichlet 탐색으로 훑은 결과, klue_bert를 kobigbird로 바꾼 5개 조합이
 0.8000으로 가장 좋았음(6개 전부 쓰는 것보다도 나음). 상세 표는
-`final_model/docs/모델설명.md` §5-2 참고.
+[`../inference/docs/모델설명.md`](../inference/docs/모델설명.md) §5-2 참고.
 
 ## 재현
 ```bash
