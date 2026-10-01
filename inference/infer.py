@@ -30,9 +30,9 @@ class DinoV3ImageEncoder(nn.Module):
     train_clip_emotion.py의 ClipVisionEncoder(DINO 분기)와 동일 로직 - 이 패키지를
     외부 의존성 없이 완전히 독립 실행 가능하게 만들기 위해 여기 그대로 옮겨옴."""
 
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, local_files_only: bool = False):
         super().__init__()
-        self.model = AutoModel.from_pretrained(model_name)
+        self.model = AutoModel.from_pretrained(model_name, local_files_only=local_files_only)
         self.num_prefix_tokens = 1 + getattr(self.model.config, "num_register_tokens", 0)
         self.out_dim = self.model.config.hidden_size * 2
         for p in self.model.parameters():
@@ -50,9 +50,12 @@ class DinoV3ImageEncoder(nn.Module):
 class ImageTextFusion(nn.Module):
     """train_fusion_final.py와 동일한 구조 (그대로 복사 - 이 디렉토리만으로 인퍼런스 가능하게)."""
 
-    def __init__(self, text_model_name, image_dim, n_labels, hidden_dim=1024, num_heads=8, dropout=0.2):
+    def __init__(self, text_model_name, image_dim, n_labels, hidden_dim=1024, num_heads=8,
+                 dropout=0.2, local_files_only=False):
         super().__init__()
-        self.text_backbone = AutoModel.from_pretrained(text_model_name, use_safetensors=True)
+        self.text_backbone = AutoModel.from_pretrained(
+            text_model_name, use_safetensors=True, local_files_only=local_files_only
+        )
         text_dim = self.text_backbone.config.hidden_size
         self.text_proj = nn.Linear(text_dim, hidden_dim)
         self.image_proj = nn.Linear(image_dim, hidden_dim)
@@ -79,24 +82,37 @@ class ImageTextFusion(nn.Module):
 
 
 class EnsembleModel:
-    def __init__(self, config_path: Path = HERE / "config.json", device: str = None):
+    def __init__(self, config_path: Path = HERE / "config.json", device: str = None,
+                 weights_dir: Path = None, local_files_only: bool = False):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        config_path = Path(config_path)
+        self.weights_dir = Path(weights_dir) if weights_dir else HERE / "weights"
         self.config = json.loads(config_path.read_text(encoding="utf-8"))
         self.vocab = self.config["label_vocab"]
 
         # 이미지 인코더 (DINOv3, frozen)
-        self.image_processor = AutoImageProcessor.from_pretrained(self.config["image_encoder"])
-        self.image_encoder = DinoV3ImageEncoder(self.config["image_encoder"]).to(self.device).eval()
+        self.image_processor = AutoImageProcessor.from_pretrained(
+            self.config["image_encoder"], local_files_only=local_files_only
+        )
+        self.image_encoder = DinoV3ImageEncoder(
+            self.config["image_encoder"], local_files_only=local_files_only
+        ).to(self.device).eval()
 
         # 5개 텍스트+융합 모델
         self.models = []
         for spec in self.config["models"]:
-            tokenizer = AutoTokenizer.from_pretrained(spec["text_model"])
+            tokenizer = AutoTokenizer.from_pretrained(
+                spec["text_model"], local_files_only=local_files_only
+            )
             model = ImageTextFusion(
                 spec["text_model"], self.config["image_dim"], len(self.vocab),
                 hidden_dim=self.config["hidden_dim"], num_heads=self.config["num_heads"],
+                local_files_only=local_files_only,
             )
-            state_dict = torch.load(HERE / spec["weight_file"], map_location="cpu", weights_only=True)
+            weight_path = self.weights_dir / Path(spec["weight_file"]).name
+            if not weight_path.is_file():
+                raise FileNotFoundError(f"가중치가 없습니다: {weight_path}")
+            state_dict = torch.load(weight_path, map_location="cpu", weights_only=True)
             model.load_state_dict(state_dict)
             model.to(self.device).eval()
             self.models.append({
@@ -133,9 +149,15 @@ def main():
     p.add_argument("--description", required=True)
     p.add_argument("--topk", type=int, default=5)
     p.add_argument("--device", default=None)
+    p.add_argument("--weights-dir", type=Path, default=HERE / "weights")
+    p.add_argument("--local-files-only", action="store_true")
     args = p.parse_args()
 
-    model = EnsembleModel(device=args.device)
+    model = EnsembleModel(
+        device=args.device,
+        weights_dir=args.weights_dir,
+        local_files_only=args.local_files_only,
+    )
     labels, scores = model.predict(args.image, args.description, args.topk)
     print(f"\nTop-{args.topk} 예측:")
     for label in labels:
