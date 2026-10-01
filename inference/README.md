@@ -4,7 +4,7 @@
 
 ## 실행
 
-[루트 설치 안내](../README.md#설치)에 따라 라이브러리와 Git LFS 가중치를 준비한 뒤, 저장소 루트에서 실행합니다.
+[루트 설치 안내](../README.md#github에서-받기)에 따라 라이브러리와 Git LFS 가중치를 준비한 뒤, 저장소 루트에서 실행합니다.
 
 ```bash
 python -m pip install -r requirements.txt
