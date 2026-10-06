@@ -110,7 +110,7 @@ def evaluate(model, loader, device):
         for pixels, grid, target in loader:
             with torch.autocast("cuda", dtype=torch.bfloat16):
                 logits = model(pixels.to(device), grid.to(device))
-            scores.append(torch.sigmoid(logits).cpu().numpy())
+            scores.append(torch.sigmoid(logits).float().cpu().numpy())
             targets.append(target.numpy())
     scores, targets = np.concatenate(scores), np.concatenate(targets)
     return f1_at_5(scores, targets), scores
