@@ -167,7 +167,8 @@ def main():
     (args.output / "results.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(f"Image-only: {image_full * 100:.2f}%")
+    print(f"Multimodal: {multimodal_full * 100:.2f}%")
 
 
 if __name__ == "__main__":
