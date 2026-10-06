@@ -131,6 +131,7 @@ def main():
     parser.add_argument("--unfreeze-text-blocks", type=int, default=0)
     parser.add_argument("--backbone-lr", type=float, default=2e-6)
     parser.add_argument("--head-lr", type=float, default=3e-4)
+    parser.add_argument("--init-checkpoint", type=Path)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
@@ -156,9 +157,12 @@ def main():
             val_data, batch_size=args.batch_size, shuffle=False, num_workers=4,
             pin_memory=True, collate_fn=collator, persistent_workers=True)
 
-    model = DDP(QwenMultimodalClassifier(
-        args.model_path, len(vocab), args.unfreeze_text_blocks, 0.2).to(device),
-        device_ids=[local_rank], find_unused_parameters=True)
+    classifier = QwenMultimodalClassifier(
+        args.model_path, len(vocab), args.unfreeze_text_blocks, 0.2).to(device)
+    if args.init_checkpoint:
+        checkpoint = torch.load(args.init_checkpoint, map_location="cpu", weights_only=False)
+        classifier.load_state_dict(checkpoint["state_dict"], strict=False)
+    model = DDP(classifier, device_ids=[local_rank], find_unused_parameters=True)
     backbone = [parameter for name, parameter in model.named_parameters()
                 if "base" in name and parameter.requires_grad]
     head = [parameter for name, parameter in model.named_parameters()
