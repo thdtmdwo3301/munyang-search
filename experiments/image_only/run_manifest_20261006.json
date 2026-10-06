@@ -21,7 +21,8 @@
   },
   "sha256": {
     "dinov3_weights": "dcb2e45127cccbf1601e5f42fef165eea275c8e5213197e8dcf3f48822718179",
-    "features": "bd08420b615a7ef6c986dc79c14131a148964b4975228fec2a4af5135fda6d6f"
+    "features": "bd08420b615a7ef6c986dc79c14131a148964b4975228fec2a4af5135fda6d6f",
+    "dinov3_end_to_end_strict_checkpoint": "e0c2a6c49d31636d16a071aa87be5e048713bd1d432982ec365785ded322b6be"
   },
   "status": "targets_not_met",
   "limitation": "The original 3954/446 split is preserved and validation is excluded from fitting. No verified strict run reached 83% image-only or 85% multimodal."
