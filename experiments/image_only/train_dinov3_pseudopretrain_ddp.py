@@ -177,7 +177,7 @@ def train_stage(model, loader, sampler, optimizer, scheduler, epochs, device, ra
         sampler.set_epoch(epoch)
         model.train()
         total = 0.0
-        for pixels, targets in loader:
+        for step, (pixels, targets) in enumerate(loader, 1):
             pixels = pixels.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
             optimizer.zero_grad(set_to_none=True)
@@ -191,6 +191,11 @@ def train_stage(model, loader, sampler, optimizer, scheduler, epochs, device, ra
             optimizer.step()
             scheduler.step()
             total += loss.item()
+            if rank == 0 and step % 500 == 0:
+                print(
+                    f"pseudo_epoch={epoch}/{epochs} step={step}/{len(loader)} "
+                    f"running_loss={total / step:.6f}", flush=True,
+                )
         dist.barrier()
         if rank == 0:
             print(f"pseudo_epoch={epoch}/{epochs} loss={total / len(loader):.6f}", flush=True)
