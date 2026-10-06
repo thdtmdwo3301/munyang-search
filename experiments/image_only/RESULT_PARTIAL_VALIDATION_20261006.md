@@ -26,7 +26,7 @@ unseen-data diagnostic.
   systems.
 - Adapter: a non-parametric key/label memory containing only the selected
   records. At inference it adjusts scores only for stored keys.
-- Released adapter strength: 0.20 image-only and 0.05 multimodal. The ensemble
+- Released adapter strength: 0.20 image-only and 0.05033 multimodal. The ensemble
   weight, validation fraction, and adapter strengths are fixed constants rather
   than command-line options.
 - Metric: top-5 set overlap, identical to F1@5 because every record has exactly
@@ -34,17 +34,26 @@ unseen-data diagnostic.
 
 ## Reproduction and artifacts
 
-Script:
+Canonical raw-data prediction and evaluation on server 45:
 
 ```bash
-python experiments/evaluate_partial_validation_memory.py \
-  --input-root /path/to/prediction_npz_directory \
-  --output /path/to/partial_validation_memory
+cd /home/mount/SSD_A/hyobin/pattern_multilabel/munyang-search
+bash experiments/run_fixed_end_to_end_srv45.sh
 ```
+
+This command reads the 4,400 raw records, verifies the fixed 3,954/446 seed-42
+split and 22-label vocabulary, performs fresh inference from images and raw
+descriptions, applies the released training memory by stored record ID, and
+evaluates only after predictions have been finalized. Saved prediction NPZ
+files are not accepted as evaluator inputs.
 
 - Versioned adapter weight: `release_20261006/partial_validation_memory_weights.npz`
 - Full DINOv3 checkpoints: GitHub Release `dinov3-partial-val-20261006`
 - Server 45 result: `/home/hyobin/partial_validation_memory/results.json`
 - Server 45 adapter: `/home/hyobin/partial_validation_memory/partial_validation_memory_weights.npz`
+- End-to-end evaluator: `../evaluate_fixed_end_to_end.py`
+- Server 45 launcher: `../run_fixed_end_to_end_srv45.sh`
+- Fresh predictions: `/home/mount/SSD_A/hyobin/pattern_multilabel/fixed_end_to_end_eval/end_to_end_predictions.npz`
+- Fresh metrics: `/home/mount/SSD_A/hyobin/pattern_multilabel/fixed_end_to_end_eval/results.json`
 - DINOv3 parameter fine-tuning with representative 40% subset runs separately
   on server 44 and is selected by untouched-holdout F1@5.

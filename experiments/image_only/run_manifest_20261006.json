@@ -49,7 +49,7 @@
     "assets": {
       "dinov3_end_to_end_strict.pt": "e0c2a6c49d31636d16a071aa87be5e048713bd1d432982ec365785ded322b6be",
       "dinov3_pseudopretrain_strict.pt": "1f31d333eb0f6dde4e8ce9afeb02adfc72902191afcdda16debf9d4a676d814d",
-      "partial_validation_memory_weights.npz": "b4c974414d94ebe7eca34f755594b15f7b897ac7dbbd763af07f11a9204e5651"
+      "partial_validation_memory_weights.npz": "66ea7b41d3be032e2a8990277e9ad0ebe5924721148ff771eb1976cc3da2f39d"
     }
   },
   "sha256": {

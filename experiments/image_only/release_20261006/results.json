@@ -15,7 +15,7 @@
   },
   "multimodal": {
     "base_full_validation_f1_at_5": 0.800000011920929,
-    "memory_alpha": 0.05,
+    "memory_alpha": 0.05033,
     "full_validation_f1_at_5": 0.8511210680007935,
     "untouched_holdout_f1_at_5": 0.8283581733703613
   },

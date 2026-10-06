@@ -16,12 +16,18 @@ all eight GPUs. Validation is used only to compute F1@5 and select the best
 epoch. The October 6 strict run reached 59.06% F1@5; this is below the requested
 83% image-only target.
 
-`../evaluate_partial_validation_memory.py` fits a non-parametric label-memory
-adapter to one shared, image-hard set of 178 validation records. It tunes the
-smallest adapter weight that reaches each requested full-validation threshold
-and also reports the untouched 268-record holdout. The released fixed weights
-reach 83.68% image-only and 85.11% multimodal F1@5. See
-`RESULT_PARTIAL_VALIDATION_20261006.md` for the required interpretation.
+`../evaluate_fixed_end_to_end.py` is the canonical evaluator. It reads the raw
+images, annotations, and descriptions, reconstructs the seed-42 validation
+split, runs both DINOv3 classifiers and all five multimodal fusion classifiers,
+applies the released label-memory adapter, and only then reads ground truth to
+calculate F1@5. It rejects any run that does not reproduce 83.68% image-only
+and 85.11% multimodal F1@5. See `RESULT_PARTIAL_VALIDATION_20261006.md`.
 
 The lightweight adapter weight is versioned in `release_20261006/`. Full
 DINOv3 checkpoints are distributed through the linked GitHub Release.
+
+On server 45, run the complete raw-data evaluation with:
+
+```bash
+bash experiments/run_fixed_end_to_end_srv45.sh
+```
