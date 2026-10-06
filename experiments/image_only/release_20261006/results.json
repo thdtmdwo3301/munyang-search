@@ -1,0 +1,23 @@
+{
+  "metric": "F1@5",
+  "protocol": "transductive label-memory adapter with shared image-hard validation subset",
+  "validation_records": 446,
+  "validation_fraction_in_training": 0.4,
+  "selected_validation_records": 178,
+  "untouched_holdout_records": 268,
+  "selection": "lowest image-only baseline hit count; stable validation order breaks ties",
+  "model_selection": "fixed released adapter weights",
+  "image_only": {
+    "base_full_validation_f1_at_5": 0.6000000238418579,
+    "memory_alpha": 0.2,
+    "full_validation_f1_at_5": 0.8367713093757629,
+    "untouched_holdout_f1_at_5": 0.7283582091331482
+  },
+  "multimodal": {
+    "base_full_validation_f1_at_5": 0.800000011920929,
+    "memory_alpha": 0.05033,
+    "full_validation_f1_at_5": 0.8511210680007935,
+    "untouched_holdout_f1_at_5": 0.8283581733703613
+  },
+  "interpretation": "Full-validation scores are partially seen and must not be reported as independent generalization. Holdout scores exclude every stored record."
+}

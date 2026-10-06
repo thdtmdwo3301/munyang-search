@@ -15,6 +15,7 @@
 *.png
 *.webp
 !evaluation/samples/*.jpg
+!experiments/image_only/release_20261006/partial_validation_memory_weights.npz
 __pycache__/
 .venv/
 venv/
