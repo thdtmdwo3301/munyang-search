@@ -87,7 +87,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--features", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--protocol", choices=["strict", "train_plus_val"], required=True)
+    parser.add_argument("--protocol", choices=["strict"], default="strict")
     parser.add_argument("--epochs", type=int, default=300)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--hidden", type=int, default=4096)
@@ -111,7 +111,7 @@ def main():
     id_to_index = {sample_id: i for i, sample_id in enumerate(ids)}
     train_idx = np.array([id_to_index[r["id"]] for r in train_records])
     val_idx = np.array([id_to_index[r["id"]] for r in val_records])
-    fit_idx = train_idx if args.protocol == "strict" else np.arange(len(ids))
+    fit_idx = train_idx
 
     x = torch.from_numpy(features[fit_idx])
     y = torch.from_numpy(labels[fit_idx])
@@ -172,9 +172,6 @@ def main():
 
         x_all = features / np.clip(np.linalg.norm(features, axis=1, keepdims=True), 1e-8, None)
         strict_cache = cache_scores(x_all[val_idx], x_all[train_idx], labels[train_idx], k=1)
-        permitted_cache = cache_scores(x_all[val_idx], x_all, labels, k=1)
-        # Leave the exact query out while still allowing the other validation labels in the bank.
-        loo_cache = cache_scores(x_all[val_idx], x_all, labels, k=1, exclude=val_idx)
         results = {
             "metric": "F1@5",
             "validation_samples": int(len(val_idx)),
@@ -183,9 +180,7 @@ def main():
             "mlp_best_f1_at_5": best[0],
             "mlp_best_epoch": best[2],
             "strict_train_only_cache_k1_f1_at_5": f1_at_5(strict_cache, labels[val_idx]),
-            "train_plus_val_cache_k1_f1_at_5": f1_at_5(permitted_cache, labels[val_idx]),
-            "train_plus_val_leave_self_out_cache_k1_f1_at_5": f1_at_5(loo_cache, labels[val_idx]),
-            "note": "train_plus_val includes the 446 validation labels by explicit user permission; it is not an independent estimate.",
+            "validation_in_training": False,
         }
         result_path = args.output / f"results_{args.protocol}.json"
         result_path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")

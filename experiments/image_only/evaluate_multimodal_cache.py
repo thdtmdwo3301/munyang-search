@@ -1,4 +1,4 @@
-"""Evaluate a transparent image+caption cache classifier under strict and permitted protocols."""
+"""Evaluate an image+caption cache classifier with a train-only label bank."""
 
 import argparse
 import json
@@ -45,13 +45,8 @@ def main():
     text_similarity = (text_features[val_idx] @ text_features.T).toarray()
     similarity = args.image_weight * image_similarity + (1.0 - args.image_weight) * text_similarity
 
-    def score(bank_idx, exclude_self):
+    def score(bank_idx):
         candidate = similarity[:, bank_idx].copy()
-        if exclude_self:
-            bank_pos = {original: pos for pos, original in enumerate(bank_idx.tolist())}
-            for row, original in enumerate(val_idx.tolist()):
-                if original in bank_pos:
-                    candidate[row, bank_pos[original]] = -np.inf
         nearest = candidate.argmax(axis=1)
         return labels[bank_idx[nearest]]
 
@@ -59,10 +54,8 @@ def main():
         "metric": "F1@5",
         "text_emotion_words_redacted": True,
         "image_weight": args.image_weight,
-        "strict_train_only_multimodal_cache_f1_at_5": f1_at_5(score(train_idx, False), labels[val_idx]),
-        "train_plus_val_multimodal_cache_f1_at_5": f1_at_5(score(np.arange(len(ids)), False), labels[val_idx]),
-        "train_plus_val_leave_self_out_multimodal_cache_f1_at_5": f1_at_5(score(np.arange(len(ids)), True), labels[val_idx]),
-        "note": "train_plus_val includes the 446 validation labels by explicit user permission; it is not an independent estimate.",
+        "strict_train_only_multimodal_cache_f1_at_5": f1_at_5(score(train_idx), labels[val_idx]),
+        "validation_in_training": False,
     }
     args.output.mkdir(parents=True, exist_ok=True)
     path = args.output / "results_multimodal_cache.json"
@@ -72,4 +65,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
