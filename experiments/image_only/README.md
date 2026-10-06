@@ -23,7 +23,5 @@ and also reports the untouched 268-record holdout. The released fixed weights
 reach 83.68% image-only and 85.11% multimodal F1@5. See
 `RESULT_PARTIAL_VALIDATION_20261006.md` for the required interpretation.
 
-The lightweight adapter weights and the disjoint train/evaluation ID manifests
-are versioned in `release_20261006/`. To materialize the 268-record evaluation
-set as real files on an authorized data host, run `../export_validation_split.py`
-against `evaluation_validation_manifest.json`.
+The lightweight adapter weight is versioned in `release_20261006/`. Full
+DINOv3 checkpoints are distributed through the linked GitHub Release.

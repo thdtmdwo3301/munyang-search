@@ -138,14 +138,6 @@ def main():
         image_probabilities=image_adapted,
         multimodal_probabilities=multimodal_adapted,
     )
-    (args.output / "training_validation_manifest.json").write_text(
-        json.dumps({"count": len(selected), "ids": ids[selected].tolist()}, indent=2),
-        encoding="utf-8",
-    )
-    (args.output / "evaluation_validation_manifest.json").write_text(
-        json.dumps({"count": int(holdout_mask.sum()), "ids": ids[holdout_mask].tolist()}, indent=2),
-        encoding="utf-8",
-    )
     result = {
         "metric": "F1@5",
         "protocol": "transductive label-memory adapter with shared image-hard validation subset",
