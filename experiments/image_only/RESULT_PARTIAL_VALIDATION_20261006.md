@@ -26,8 +26,9 @@ unseen-data diagnostic.
   systems.
 - Adapter: a non-parametric key/label memory containing only the selected
   records. At inference it adjusts scores only for stored keys.
-- Released adapter strength: 0.20 image-only and 0.05 multimodal. Optional
-  minimum-weight tuning remains available with `--tune-minimum-alpha`.
+- Released adapter strength: 0.20 image-only and 0.05 multimodal. The ensemble
+  weight, validation fraction, and adapter strengths are fixed constants rather
+  than command-line options.
 - Metric: top-5 set overlap, identical to F1@5 because every record has exactly
   five target labels.
 
@@ -37,9 +38,7 @@ Script:
 
 ```bash
 python experiments/evaluate_partial_validation_memory.py \
-  --image-a /path/to/dinov3_end_to_end_strict_val.npz \
-  --image-b /path/to/dinov3_pseudo_blackwell_val.npz \
-  --multimodal /path/to/ensemble_predictions_0800.npz \
+  --input-root /path/to/prediction_npz_directory \
   --output /path/to/partial_validation_memory
 ```
 
