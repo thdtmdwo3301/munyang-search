@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-06",
+  "metric": "F1@5",
+  "records": 4400,
+  "train_records": 3954,
+  "validation_records": 446,
+  "image_encoder": "official DINOv3 ViT-L/16",
+  "precision": "bf16",
+  "gpus": "8 x NVIDIA RTX A6000 49140 MiB",
+  "docker_image": "munyang-image-only:20261006",
+  "docker_image_id": "sha256:26ddca0d111c4b64f62533a9db7ed98802cda467c08189965851a91594d329de",
+  "results": {
+    "image_only_train_plus_val_f1_at_5": 1.0,
+    "image_only_strict_f1_at_5": 0.573542594909668,
+    "multimodal_train_plus_val_f1_at_5": 1.0,
+    "multimodal_strict_f1_at_5": 0.5825111865997314,
+    "image_only_train_plus_val_leave_self_out_f1_at_5": 0.5147982239723206,
+    "multimodal_train_plus_val_leave_self_out_f1_at_5": 0.5991031527519226
+  },
+  "sha256": {
+    "dinov3_weights": "dcb2e45127cccbf1601e5f42fef165eea275c8e5213197e8dcf3f48822718179",
+    "features": "bd08420b615a7ef6c986dc79c14131a148964b4975228fec2a4af5135fda6d6f",
+    "train_plus_val_checkpoint": "fcc19536833111d380b90db5c3e13298dfe0bd9dec41393f7c0afbc339e0f3cd"
+  },
+  "limitation": "The train_plus_val scores include all 446 validation labels during fitting and are not independent generalization estimates."
+}
