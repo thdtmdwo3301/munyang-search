@@ -40,3 +40,9 @@ hf_cache/
 !inference/weights/xlmr.pt.part1
 !inference/weights/xlmr.pt.part2
 *.restore
+
+# Portable runtime and local configuration
+assets/
+.cache/
+*.tar.gz
+*.local.json

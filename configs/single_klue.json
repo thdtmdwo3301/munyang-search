@@ -1,0 +1,50 @@
+{
+  "model": {
+    "text_encoder": {
+      "type": "hf_text",
+      "model_name": "../assets/text/klue"
+    },
+    "classifier": {
+      "type": "attention_fusion",
+      "labels": 22,
+      "hidden_dim": 1024,
+      "num_heads": 8,
+      "image_dim": 2048
+    }
+  },
+  "checkpoint": "../assets/weights/klue.pt",
+  "checkpoint_layout": "legacy_fusion",
+  "image_processor": "../assets/dinov3l",
+  "tokenizer": "../assets/text/klue",
+  "max_length": 384,
+  "label_vocab": [
+    "강한",
+    "고급스러운",
+    "고전적인",
+    "귀여운",
+    "깔끔한",
+    "단순한",
+    "독특한",
+    "부드러운",
+    "섬세한",
+    "소박한",
+    "신비한",
+    "우아한",
+    "원초적인",
+    "유려한",
+    "익살스러운",
+    "자연적인",
+    "장식적인",
+    "조화로운",
+    "풍성한",
+    "현대적인",
+    "화려한",
+    "활동적인"
+  ],
+  "feature_image_encoder": {
+    "type": "dino",
+    "model_name": "../assets/dinov3l",
+    "dtype": "bfloat16",
+    "frozen": true
+  }
+}

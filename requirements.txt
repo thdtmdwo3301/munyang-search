@@ -1,11 +1,2 @@
-# Python 3.11; NVIDIA CUDA 12.1 (Linux/Windows)
---extra-index-url https://download.pytorch.org/whl/cu121
-torch==2.5.1+cu121
-torchvision==0.20.1+cu121
-transformers==5.13.0
-accelerate==1.14.0
-huggingface_hub==1.22.0
-safetensors==0.8.0
-sentencepiece==0.2.2
-pillow==10.2.0
-numpy==2.1.2
+# Verified dependencies; see README.md for supported systems.
+-r requirements-lock-linux-py311.txt

@@ -1,0 +1,23 @@
+{
+  "image_encoder": {
+    "type": "dino",
+    "dtype": "bfloat16",
+    "local_files_only": true
+  },
+  "text_encoder": {
+    "type": "hf_text",
+    "pooling": "masked_mean",
+    "local_files_only": true
+  },
+  "image_classifier": {
+    "type": "image_mlp",
+    "hidden_dim": 1024,
+    "dropout": 0.2
+  },
+  "multimodal_classifier": {
+    "type": "attention_fusion",
+    "hidden_dim": 1024,
+    "num_heads": 8,
+    "dropout": 0.2
+  }
+}

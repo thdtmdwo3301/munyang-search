@@ -1,0 +1,11 @@
+{
+  "data": "data",
+  "weights": "assets/weights",
+  "image_model": "assets/dinov3l",
+  "ensemble": "configs/ensemble.json",
+  "modules": "configs/modules.json",
+  "outputs": "outputs",
+  "batch_size": 24,
+  "device": "cuda:0",
+  "memory": "released"
+}

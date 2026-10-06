@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-cd "$(dirname "$0")"
-
-if [ ! -f .venv/bin/activate ]; then
-  echo "가상환경이 없습니다. 먼저 bash setup.sh를 실행하세요."
+PATTERN_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$PATTERN_ROOT"
+if [[ -x "$PATTERN_ROOT/venv/bin/python" ]]; then
+  PATTERN_PYTHON="$PATTERN_ROOT/venv/bin/python"
+elif [[ -x "$PATTERN_ROOT/.venv/bin/python" ]]; then
+  PATTERN_PYTHON="$PATTERN_ROOT/.venv/bin/python"
+else
+  echo "먼저 Python 3.11 가상환경을 만들고 requirements.txt를 설치하세요." >&2
   exit 1
 fi
-
-source .venv/bin/activate
-python inference/prepare_weights.py
-python -m evaluation.generate_report --open "$@"
+export PYTHONNOUSERSITE=1
+exec "$PATTERN_PYTHON" main.py evaluate "$@"

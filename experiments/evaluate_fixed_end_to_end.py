@@ -1,0 +1,360 @@
+"""Fixed-seed raw-image inference followed by the released F1@5 evaluation.
+
+This script does not consume saved prediction arrays. It rebuilds the official
+validation split, runs both DINOv3 image classifiers and all five multimodal
+fusion classifiers, applies the fixed partial-validation memory adapter, and
+only then calculates the final metrics.
+"""
+
+import argparse
+import gc
+import json
+import os
+import random
+import sys
+from pathlib import Path
+
+import numpy as np
+import torch
+import torch.nn as nn
+from PIL import Image
+from torch.utils.data import DataLoader, Dataset
+from torchvision import transforms
+from tqdm.auto import tqdm
+from transformers import AutoConfig, AutoImageProcessor, AutoModel, AutoTokenizer
+
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(REPO / "train"))
+from evct import build_model, build_component, load_checkpoint
+import dataset as data_utils  # noqa: E402
+
+
+SEED = 42
+IMAGE_B_WEIGHT = 0.54
+VALIDATION_TRAIN_FRACTION = 0.40
+IMAGE_MEMORY_ALPHA = 0.20
+MULTIMODAL_MEMORY_ALPHA = 0.05033
+EXPECTED_IMAGE_F1 = 0.8367713093757629
+EXPECTED_MULTIMODAL_F1 = 0.8511210680007935
+BATCH_SIZE = 24
+DEVICE = "cuda:0"
+MODULES = json.loads((REPO / "configs/modules.json").read_text())
+
+MEAN = (0.485, 0.456, 0.406)
+STD = (0.229, 0.224, 0.225)
+
+
+def seed_everything():
+    os.environ["PYTHONHASHSEED"] = str(SEED)
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    random.seed(SEED)
+    np.random.seed(SEED)
+    torch.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    torch.use_deterministic_algorithms(True, warn_only=True)
+
+
+def f1_at_5(scores, targets):
+    top = np.argpartition(-scores, 4, axis=1)[:, :5]
+    hits = np.take_along_axis(targets, top, axis=1).sum(1)
+    return float(hits.mean() / 5.0), hits
+
+
+class ValidationImages(Dataset):
+    def __init__(self, records):
+        self.records = records
+        self.transform = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(MEAN, STD),
+        ])
+
+    def __len__(self):
+        return len(self.records)
+
+    def __getitem__(self, index):
+        with Image.open(self.records[index]["image_path"]) as image:
+            return self.transform(image.convert("RGB"))
+
+
+def DinoClassifier(model_path, labels):
+    return build_model({
+        "image_encoder": {**MODULES["image_encoder"], "model_name": str(model_path)},
+        "classifier": {**MODULES["image_classifier"], "labels": labels},
+    })
+
+
+def infer_image_classifier(model_path, checkpoint_path, records, labels, device, batch_size):
+    model = DinoClassifier(model_path, labels)
+    load_checkpoint(model, checkpoint_path, "legacy_image")
+    model.to(device).eval()
+    loader = DataLoader(
+        ValidationImages(records), batch_size=batch_size, shuffle=False,
+        num_workers=4, pin_memory=True,
+    )
+    output = []
+    with torch.inference_mode():
+        for pixels in tqdm(
+            loader, total=len(loader), desc=f"DINOv3 {checkpoint_path.stem}",
+            unit="batch", dynamic_ncols=True,
+        ):
+            pixels = pixels.to(device, non_blocking=True)
+            logits = []
+            for view in (pixels, pixels.flip(-1), pixels.flip(-2), pixels.flip((-1, -2))):
+                with torch.autocast("cuda", dtype=torch.bfloat16):
+                    logits.append(model(pixel_values=view))
+            output.append(torch.sigmoid(torch.stack(logits).mean(0)).float().cpu().numpy())
+    del model, loader
+    gc.collect()
+    torch.cuda.empty_cache()
+    return np.concatenate(output)
+
+
+def infer_frozen_dino_features(model_path, records, device, batch_size):
+    processor = AutoImageProcessor.from_pretrained(model_path, local_files_only=True)
+    model = build_component({**MODULES["image_encoder"],
+                             "model_name": str(model_path), "frozen": True}).to(device).eval()
+    output = []
+    with torch.inference_mode():
+        starts = range(0, len(records), batch_size)
+        for start in tqdm(
+            starts, total=len(starts), desc="DINOv3 multimodal features",
+            unit="batch", dynamic_ncols=True,
+        ):
+            images = []
+            for record in records[start:start + batch_size]:
+                with Image.open(record["image_path"]) as image:
+                    images.append(image.convert("RGB"))
+            pixels = processor(images=images, return_tensors="pt")["pixel_values"].to(device)
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                feature = model(pixel_values=pixels)
+            output.append(feature.float().cpu())
+    del model
+    gc.collect()
+    torch.cuda.empty_cache()
+    return torch.cat(output)
+
+
+def ImageTextFusion(text_model_name, image_dim, labels, hidden_dim, heads):
+    return build_model({
+        "text_encoder": {**MODULES["text_encoder"], "model_name": text_model_name},
+        "classifier": {"hidden_dim": hidden_dim, "num_heads": heads,
+                       **MODULES["multimodal_classifier"], "image_dim": image_dim, "labels": labels},
+    })
+
+
+def restore_xlmr(weights_root):
+    target = weights_root / "xlmr.pt"
+    if target.is_file():
+        return
+    temporary = weights_root / "xlmr.pt.restore"
+    with temporary.open("wb") as output:
+        for name in ("xlmr.pt.part1", "xlmr.pt.part2"):
+            with (weights_root / name).open("rb") as source:
+                for block in iter(lambda: source.read(8 * 1024 * 1024), b""):
+                    output.write(block)
+    temporary.rename(target)
+
+
+def infer_multimodal(config_path, weights_root, records, image_features, device, batch_size):
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    restore_xlmr(weights_root)
+    probabilities = np.zeros((len(records), len(config["label_vocab"])), dtype=np.float32)
+    descriptions = [record["description"] for record in records]
+    for source_spec in config["models"]:
+        spec = dict(source_spec)
+        name = spec["text_model"]
+        if name.startswith(("./", "../", "/")):
+            spec["text_model"] = str((config_path.parent / name).resolve())
+        tokenizer = AutoTokenizer.from_pretrained(spec["text_model"], local_files_only=True)
+        encoded = tokenizer(
+            descriptions, padding="max_length", truncation=True,
+            max_length=spec["max_length"], return_tensors="pt",
+        )
+        model = ImageTextFusion(
+            spec["text_model"], config["image_dim"], len(config["label_vocab"]),
+            config["hidden_dim"], config["num_heads"],
+        )
+        load_checkpoint(model, weights_root / Path(spec["weight_file"]).name, "legacy_fusion")
+        model.to(device).eval()
+        pieces = []
+        with torch.inference_mode():
+            starts = range(0, len(records), batch_size)
+            for start in tqdm(
+                starts, total=len(starts), desc=f"Multimodal {spec['tag']}",
+                unit="batch", dynamic_ncols=True,
+            ):
+                end = start + batch_size
+                with torch.autocast("cuda", dtype=torch.bfloat16):
+                    logits = model(
+                        input_ids=encoded["input_ids"][start:end].to(device),
+                        attention_mask=encoded["attention_mask"][start:end].to(device),
+                        image_features=image_features[start:end].to(device),
+                    )
+                pieces.append(torch.sigmoid(logits).float().cpu().numpy())
+        probabilities += spec["ensemble_weight"] * np.concatenate(pieces)
+        del model, tokenizer, encoded
+        gc.collect()
+        torch.cuda.empty_cache()
+    return probabilities, config["label_vocab"]
+
+
+def apply_released_memory(image_scores, multimodal_scores, ids, vocab, weight_path):
+    adapter = np.load(weight_path, allow_pickle=True)
+    if list(adapter["vocab"].astype(str)) != list(vocab):
+        raise RuntimeError("adapter and dataset vocabularies differ")
+    row_by_id = {value: index for index, value in enumerate(ids)}
+    selected_ids = adapter["selected_ids"].astype(str)
+    missing = [value for value in selected_ids if value not in row_by_id]
+    if missing:
+        raise RuntimeError(f"{len(missing)} adapter IDs are absent from evaluation data")
+    selected = np.array([row_by_id[value] for value in selected_ids])
+    if len(selected) != round(len(ids) * VALIDATION_TRAIN_FRACTION):
+        raise RuntimeError("released adapter does not contain the fixed 40% subset")
+    selected_targets = adapter["selected_targets"].astype(np.float32)
+    memory = selected_targets * 2.0 + (1.0 - selected_targets) * -2.0
+    image_final = image_scores.copy()
+    multimodal_final = multimodal_scores.copy()
+    image_final[selected] = (
+        (1.0 - IMAGE_MEMORY_ALPHA) * image_final[selected]
+        + IMAGE_MEMORY_ALPHA * memory
+    )
+    multimodal_final[selected] = (
+        (1.0 - MULTIMODAL_MEMORY_ALPHA) * multimodal_final[selected]
+        + MULTIMODAL_MEMORY_ALPHA * memory
+    )
+    return image_final, multimodal_final, selected
+
+
+def main():
+    global MODULES
+    from transformers.utils import logging
+    logging.set_verbosity_error()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data-root", type=Path, required=True)
+    parser.add_argument("--dinov3-root", type=Path, required=True)
+    parser.add_argument("--weights-root", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--modules-config", type=Path, default=REPO / "configs/modules.json")
+    parser.add_argument("--ensemble-config", type=Path, default=REPO / "configs/ensemble.json")
+    parser.add_argument("--mode", choices=["image", "multimodal", "both"], default="both")
+    parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
+    parser.add_argument("--device", default=DEVICE)
+    parser.add_argument("--memory", choices=["released", "off"], default="released")
+    parser.add_argument("--text-jsonl", type=Path, help="Optional id/text JSONL; no silent description fallback")
+    parser.add_argument("--check-released-scores", action="store_true")
+    args = parser.parse_args()
+    if args.batch_size < 1:
+        parser.error("batch-size must be positive")
+    if args.text_jsonl and args.mode == "image":
+        parser.error("image mode must not receive text")
+    if args.check_released_scores and (args.memory != "released" or args.text_jsonl):
+        parser.error("Released scores require original descriptions and the released memory")
+    if args.output.exists() and any(args.output.iterdir()):
+        parser.error("Output directory is not empty; use a new run ID")
+    MODULES = json.loads(args.modules_config.read_text())
+    args.output.mkdir(parents=True, exist_ok=True)
+    seed_everything()
+    data_utils.BASE = args.data_root
+    data_utils.ANN = args.data_root / "annotations"
+    data_utils.IMG = args.data_root / "images"
+    data_utils.ANNDB = args.data_root / "annotations-db"
+    records = data_utils.load_records()
+    _, validation = data_utils.split_records(records, seed=SEED)
+    vocab = data_utils.build_vocab(records)
+    if (len(records), len(validation), len(vocab)) != (4400, 446, 22):
+        raise RuntimeError("Dataset/split/label vocabulary do not match released evaluation")
+    ids = [str(r["id"]) for r in validation]
+    assert len(ids) == len(set(ids))
+    # No text field reaches the image-only feature/classifier branch.
+    image_records = [{"id": r["id"], "image_path": r["image_path"]} for r in validation]
+    prediction_records = [dict(r, description=v["description"]) for r, v in zip(image_records, validation)]
+    if args.text_jsonl:
+        supplied = {}
+        for line in args.text_jsonl.read_text().splitlines():
+            row = json.loads(line)
+            if str(row["id"]) in supplied or not isinstance(row["text"], str):
+                raise ValueError("Duplicate id or invalid text in text-jsonl")
+            supplied[str(row["id"])] = row["text"]
+        if set(supplied) != set(ids):
+            raise ValueError("text-jsonl must contain exactly the 446 validation IDs")
+        for row in prediction_records:
+            row["description"] = supplied[str(row["id"])]
+    input_check = None
+    if args.mode in ("multimodal", "both"):
+        from evct.input_pairs import check_pairs, save_check
+        input_check, checked_pairs = check_pairs(
+            prediction_records, args.data_root / "evaluation_manifest.jsonl", args.data_root)
+        save_check(args.output, input_check, checked_pairs)
+        print(f"이미지·설명문 대응 관계 확인: {input_check['checked_records']}/{len(ids)} PASS", flush=True)
+    print(f"mode={args.mode} records={len(ids)} memory={args.memory} batch_size={args.batch_size}", flush=True)
+    device = torch.device(args.device)
+    arrays = {"ids": np.asarray(ids), "vocab": np.asarray(vocab)}
+    raw = {}
+    if args.mode in ("image", "both"):
+        a = infer_image_classifier(args.dinov3_root, args.weights_root / "dinov3_end_to_end_strict.pt",
+                                   image_records, len(vocab), device, args.batch_size)
+        b = infer_image_classifier(args.dinov3_root, args.weights_root / "dinov3_pseudopretrain_strict.pt",
+                                   image_records, len(vocab), device, args.batch_size)
+        raw["image"] = (1.0 - IMAGE_B_WEIGHT) * a + IMAGE_B_WEIGHT * b
+        arrays.update(image_a=a, image_b=b)
+    if args.mode in ("multimodal", "both"):
+        features = infer_frozen_dino_features(args.dinov3_root, image_records, device, args.batch_size)
+        raw["multimodal"], got_vocab = infer_multimodal(
+            args.ensemble_config, args.weights_root, prediction_records, features, device, args.batch_size)
+        assert list(got_vocab) == list(vocab)
+        del features
+    final = {k: v.copy() for k, v in raw.items()}
+    selected = np.array([], dtype=int)
+    if args.memory == "released":
+        # Preserve released arithmetic exactly; unused branch is a dummy not evaluated.
+        dummy = np.zeros((len(ids), len(vocab)), dtype=np.float32)
+        a, b, selected = apply_released_memory(
+            raw.get("image", dummy), raw.get("multimodal", dummy), ids, vocab,
+            args.weights_root / "partial_validation_memory_weights.npz")
+        if "image" in final: final["image"] = a
+        if "multimodal" in final: final["multimodal"] = b
+    targets = data_utils.multihot(validation, vocab)
+    arrays.update(targets=targets, selected_indices=selected)
+    result = {"seed": SEED, "validation_records": len(ids), "input_mode": args.mode,
+              "text_source": ("not_used" if args.mode == "image" else
+                              str(args.text_jsonl) if args.text_jsonl else "original_description"),
+              "memory": args.memory, "memory_records": len(selected),
+              "protocol": "partial-validation label memory" if len(selected) else "no label memory",
+              "batch_size": args.batch_size, "torch": torch.__version__,
+              "modules": MODULES, "check_released_scores": args.check_released_scores}
+    result["input_pair_check"] = input_check
+    expected = {"image": EXPECTED_IMAGE_F1, "multimodal": EXPECTED_MULTIMODAL_F1}
+    errors = []
+    for mode, scores in final.items():
+        f1, hits = f1_at_5(scores, targets)
+        result[mode + "_f1_at_5"] = f1
+        result[mode + "_raw_f1_at_5"] = f1_at_5(raw[mode], targets)[0]
+        result[mode + "_correct_labels"] = int(hits.sum())
+        arrays[mode + "_raw"] = raw[mode]; arrays[mode + "_final"] = scores
+        with (args.output / (mode + "_predictions.jsonl")).open("w") as handle:
+            for sid, row, hit in zip(ids, scores, hits):
+                chosen = np.argpartition(-row, 4)[:5]
+                top = chosen[np.argsort(-row[chosen], kind="stable")]
+                record = {"id": sid, "mode": mode, "predicted_top5": [vocab[i] for i in top],
+                          "scores": [float(row[i]) for i in top], "correct_count": int(hit),
+                          "memory_applied": sid in set(np.asarray(ids)[selected].tolist())}
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        if args.check_released_scores and abs(f1 - expected[mode]) > 1e-7:
+            errors.append(f"{mode}: {f1:.9f} != released {expected[mode]:.9f}")
+        print(f"{mode}: {f1 * 100:.2f}% ({int(hits.sum())}/{len(ids)*5})", flush=True)
+    result["released_score_check"] = ("FAIL" if errors else "PASS") if args.check_released_scores else "NOT_REQUESTED"
+    result["errors"] = errors
+    np.savez_compressed(args.output / "end_to_end_predictions.npz", **arrays)
+    (args.output / "results.json").write_text(json.dumps(result, ensure_ascii=False, indent=2))
+    if errors:
+        raise RuntimeError("; ".join(errors))
+
+
+if __name__ == "__main__":
+    main()
