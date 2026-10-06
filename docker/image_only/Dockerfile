@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.7.1-cuda12.6-cudnn9-devel
+FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-devel
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -15,4 +15,3 @@ RUN python -m pip install --upgrade pip && \
       sentencepiece==0.2.1
 
 WORKDIR /workspace
-
