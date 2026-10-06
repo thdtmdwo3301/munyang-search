@@ -20,6 +20,7 @@ import torch.nn as nn
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
+from tqdm.auto import tqdm
 from transformers import AutoConfig, AutoImageProcessor, AutoModel, AutoTokenizer
 
 
@@ -121,7 +122,10 @@ def infer_image_classifier(model_path, checkpoint_path, records, labels, device,
     )
     output = []
     with torch.inference_mode():
-        for pixels in loader:
+        for pixels in tqdm(
+            loader, total=len(loader), desc=f"DINOv3 {checkpoint_path.stem}",
+            unit="batch", dynamic_ncols=True,
+        ):
             pixels = pixels.to(device, non_blocking=True)
             logits = []
             for view in (pixels, pixels.flip(-1), pixels.flip(-2), pixels.flip((-1, -2))):
@@ -141,7 +145,11 @@ def infer_frozen_dino_features(model_path, records, device, batch_size):
     ).to(device).eval()
     output = []
     with torch.inference_mode():
-        for start in range(0, len(records), batch_size):
+        starts = range(0, len(records), batch_size)
+        for start in tqdm(
+            starts, total=len(starts), desc="DINOv3 multimodal features",
+            unit="batch", dynamic_ncols=True,
+        ):
             images = []
             for record in records[start:start + batch_size]:
                 with Image.open(record["image_path"]) as image:
@@ -219,7 +227,11 @@ def infer_multimodal(config_path, weights_root, records, image_features, device,
         model.to(device).eval()
         pieces = []
         with torch.inference_mode():
-            for start in range(0, len(records), batch_size):
+            starts = range(0, len(records), batch_size)
+            for start in tqdm(
+                starts, total=len(starts), desc=f"Multimodal {spec['tag']}",
+                unit="batch", dynamic_ncols=True,
+            ):
                 end = start + batch_size
                 with torch.autocast("cuda", dtype=torch.bfloat16):
                     logits = model(

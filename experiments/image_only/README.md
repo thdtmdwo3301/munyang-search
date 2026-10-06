@@ -25,6 +25,7 @@ and 85.11% multimodal F1@5. See `RESULT_PARTIAL_VALIDATION_20261006.md`.
 
 The lightweight adapter weight is versioned in `release_20261006/`. Full
 DINOv3 checkpoints are distributed through the linked GitHub Release.
+The evaluator shows a batch progress bar for every DINOv3 and multimodal model.
 
 On server 45, run the complete raw-data evaluation with:
 
