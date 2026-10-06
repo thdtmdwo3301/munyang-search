@@ -134,7 +134,12 @@ class DinoClassifier(nn.Module):
         )
         for parameter in self.backbone.parameters():
             parameter.requires_grad_(False)
-        for block in self.backbone.layer[-unfreeze_blocks:]:
+        # Transformers 4.57 exposes ``layer`` directly, while 5.x nests it
+        # under ``model``. Support both container images used on servers 44/45.
+        blocks = getattr(self.backbone, "layer", None)
+        if blocks is None:
+            blocks = self.backbone.model.layer
+        for block in blocks[-unfreeze_blocks:]:
             for parameter in block.parameters():
                 parameter.requires_grad_(True)
         for parameter in self.backbone.norm.parameters():
