@@ -97,7 +97,7 @@ class OfficialDataset(Dataset):
 
 
 class PseudoDataset(Dataset):
-    def __init__(self, image_root, jsonl, vocab, transform, excluded_ids):
+    def __init__(self, image_root, jsonl, vocab, transform, excluded_ids, max_records=None):
         self.transform = transform
         self.l2i = {label: i for i, label in enumerate(vocab)}
         self.rows = []
@@ -110,6 +110,8 @@ class PseudoDataset(Dataset):
                 labels = mapped_labels(row.get("adjectives", []), vocab)
                 if labels and path.is_file():
                     self.rows.append((path, labels))
+                    if max_records and len(self.rows) >= max_records:
+                        break
 
     def __len__(self):
         return len(self.rows)
@@ -219,6 +221,7 @@ def main():
     parser.add_argument("--exclusion-manifest", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--pseudo-epochs", type=int, default=2)
+    parser.add_argument("--max-pseudo-records", type=int)
     parser.add_argument("--finetune-epochs", type=int, default=30)
     parser.add_argument("--pseudo-batch-size", type=int, default=24)
     parser.add_argument("--finetune-batch-size", type=int, default=8)
@@ -258,7 +261,8 @@ def main():
         exclusion = json.loads(args.exclusion_manifest.read_text(encoding="utf-8"))
         excluded_ids = set(exclusion["external_validation_duplicates"])
     pseudo_dataset = PseudoDataset(
-        args.pseudo_image_root, args.pseudo_jsonl, vocab, train_transform, excluded_ids
+        args.pseudo_image_root, args.pseudo_jsonl, vocab, train_transform, excluded_ids,
+        args.max_pseudo_records,
     )
     train_dataset = OfficialDataset(train_records, vocab, train_transform)
     val_dataset = OfficialDataset(val_records, vocab, val_transform)
