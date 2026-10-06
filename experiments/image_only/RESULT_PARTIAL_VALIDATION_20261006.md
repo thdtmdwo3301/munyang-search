@@ -44,6 +44,7 @@ python experiments/evaluate_partial_validation_memory.py \
 ```
 
 - Versioned adapter weight: `release_20261006/partial_validation_memory_weights.npz`
+- Full DINOv3 checkpoints: GitHub Release `dinov3-partial-val-20261006`
 - Versioned training IDs: `release_20261006/training_validation_manifest.json`
 - Versioned evaluation-only IDs: `release_20261006/evaluation_validation_manifest.json`
 - Server 45 result: `/home/hyobin/partial_validation_memory/results.json`

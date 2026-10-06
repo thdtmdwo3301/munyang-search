@@ -44,6 +44,14 @@
     "status": "full_validation_targets_met",
     "limitation": "Full-validation scores are transductive because 40% of validation labels are stored during training."
   },
+  "partial_validation_release": {
+    "url": "https://github.com/thdtmdwo3301/munyang-search/releases/tag/dinov3-partial-val-20261006",
+    "assets": {
+      "dinov3_end_to_end_strict.pt": "e0c2a6c49d31636d16a071aa87be5e048713bd1d432982ec365785ded322b6be",
+      "dinov3_pseudopretrain_strict.pt": "1f31d333eb0f6dde4e8ce9afeb02adfc72902191afcdda16debf9d4a676d814d",
+      "partial_validation_memory_weights.npz": "b4c974414d94ebe7eca34f755594b15f7b897ac7dbbd763af07f11a9204e5651"
+    }
+  },
   "sha256": {
     "dinov3_weights": "dcb2e45127cccbf1601e5f42fef165eea275c8e5213197e8dcf3f48822718179",
     "features": "bd08420b615a7ef6c986dc79c14131a148964b4975228fec2a4af5135fda6d6f",
