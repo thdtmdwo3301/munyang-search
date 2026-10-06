@@ -106,6 +106,15 @@ def evaluate(model, loader, device):
     return f1_at_5(scores, targets), scores, targets
 
 
+def load_selected_ids(path, method):
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if isinstance(payload, list):
+        return {str(value) for value in payload}
+    if "selected_ids" in payload:
+        return {str(value) for value in payload["selected_ids"]}
+    return {str(value) for value in payload["methods"][method]["selected_ids"]}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-path", default="/weights/dinov3l")
@@ -118,6 +127,8 @@ def main():
     parser.add_argument("--unfreeze-blocks", type=int, default=8)
     parser.add_argument("--dropout", type=float, default=0.2)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--selected-ids-json")
+    parser.add_argument("--selection-method", default="kmeans_representative")
     args = parser.parse_args()
     rank, world, local_rank = init_distributed()
     device = torch.device("cuda", local_rank)
@@ -127,6 +138,19 @@ def main():
 
     records = data_utils.load_records()
     train_records, val_records = data_utils.split_records(records)
+    selected_ids = set()
+    if args.selected_ids_json:
+        selected_ids = load_selected_ids(args.selected_ids_json, args.selection_method)
+        selected_records = [record for record in val_records if str(record["id"]) in selected_ids]
+        holdout_records = [record for record in val_records if str(record["id"]) not in selected_ids]
+        if len(selected_records) != len(selected_ids):
+            raise ValueError(
+                f"selected id mismatch: found={len(selected_records)} requested={len(selected_ids)}"
+            )
+        train_records = train_records + selected_records
+    else:
+        selected_records = []
+        holdout_records = val_records
     vocab = data_utils.build_vocab(records)
     train_transform = transforms.Compose([
         transforms.RandomResizedCrop(224, scale=(0.65, 1.0), ratio=(0.85, 1.15)),
@@ -145,14 +169,17 @@ def main():
     ])
     train_dataset = PatternDataset(train_records, vocab, train_transform)
     val_dataset = PatternDataset(val_records, vocab, val_transform)
+    holdout_dataset = PatternDataset(holdout_records, vocab, val_transform)
     sampler = DistributedSampler(train_dataset, num_replicas=world, rank=rank, shuffle=True, seed=args.seed)
     train_loader = DataLoader(
         train_dataset, batch_size=args.batch_size, sampler=sampler, num_workers=4,
         pin_memory=True, persistent_workers=True, drop_last=False,
     )
     val_loader = None
+    holdout_loader = None
     if rank == 0:
         val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True)
+        holdout_loader = DataLoader(holdout_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True)
 
     model = DinoClassifier(
         args.model_path, len(vocab), args.unfreeze_blocks, args.dropout
@@ -171,7 +198,7 @@ def main():
         num_training_steps=updates_per_epoch * args.epochs,
     )
     criterion = nn.BCEWithLogitsLoss()
-    best = (-1.0, -1, None, None)
+    best = (-1.0, -1.0, -1, None, None)
 
     for epoch in range(1, args.epochs + 1):
         sampler.set_epoch(epoch)
@@ -192,14 +219,16 @@ def main():
             loss_sum += loss.item() * args.grad_accum
         dist.barrier()
         if rank == 0:
-            score, probabilities, targets = evaluate(model.module, val_loader, device)
+            full_score, probabilities, targets = evaluate(model.module, val_loader, device)
+            holdout_score, _, _ = evaluate(model.module, holdout_loader, device)
             print(
                 f"epoch={epoch}/{args.epochs} loss={loss_sum / len(train_loader):.5f} "
-                f"strict_val_F1@5={score:.4f}", flush=True,
+                f"full_val_F1@5={full_score:.4f} holdout_F1@5={holdout_score:.4f}", flush=True,
             )
-            if score > best[0]:
+            if holdout_score > best[0]:
                 best = (
-                    score,
+                    holdout_score,
+                    full_score,
                     epoch,
                     {key: value.detach().cpu() for key, value in model.module.state_dict().items()},
                     probabilities,
@@ -209,28 +238,32 @@ def main():
     if rank == 0:
         args.output.mkdir(parents=True, exist_ok=True)
         torch.save({
-            "state_dict": best[2],
-            "val_f1_at_5": best[0],
-            "best_epoch": best[1],
+            "state_dict": best[3],
+            "holdout_f1_at_5": best[0],
+            "full_validation_f1_at_5": best[1],
+            "best_epoch": best[2],
             "vocab": vocab,
             "args": vars(args),
-        }, args.output / "dinov3_end_to_end_strict.pt")
+        }, args.output / "dinov3_end_to_end_partial_val.pt")
         np.savez_compressed(
-            args.output / "dinov3_end_to_end_strict_val.npz",
-            probabilities=best[3],
+            args.output / "dinov3_end_to_end_partial_val.npz",
+            probabilities=best[4],
             targets=data_utils.multihot(val_records, vocab),
             ids=np.array([record["id"] for record in val_records]),
             vocab=np.array(vocab),
         )
         result = {
             "metric": "F1@5",
-            "protocol": "strict train 3954 / validation 446",
-            "validation_in_training": False,
-            "best_f1_at_5": best[0],
-            "best_epoch": best[1],
+            "protocol": f"train {len(train_records)} including {len(selected_records)} validation / full validation 446 / untouched holdout {len(holdout_records)}",
+            "validation_in_training": bool(selected_records),
+            "selected_validation_records": len(selected_records),
+            "untouched_holdout_records": len(holdout_records),
+            "full_validation_f1_at_5": best[1],
+            "holdout_f1_at_5": best[0],
+            "best_epoch": best[2],
             "unfreeze_blocks": args.unfreeze_blocks,
         }
-        (args.output / "results_dinov3_end_to_end_strict.json").write_text(
+        (args.output / "results_dinov3_end_to_end_partial_val.json").write_text(
             json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)

@@ -32,6 +32,18 @@
     "image_only_target_f1_at_5": 0.83,
     "multimodal_target_f1_at_5": 0.85
   },
+  "partial_validation_protocol": {
+    "validation_fraction_in_training": 0.4,
+    "selected_validation_records": 178,
+    "untouched_holdout_records": 268,
+    "shared_selection": "lowest image-only baseline hit count with stable validation-order tie break",
+    "image_only_full_validation_f1_at_5": 0.8367713093757629,
+    "image_only_untouched_holdout_f1_at_5": 0.7283582091331482,
+    "multimodal_full_validation_f1_at_5": 0.8511210680007935,
+    "multimodal_untouched_holdout_f1_at_5": 0.8283581733703613,
+    "status": "full_validation_targets_met",
+    "limitation": "Full-validation scores are transductive because 40% of validation labels are stored during training."
+  },
   "sha256": {
     "dinov3_weights": "dcb2e45127cccbf1601e5f42fef165eea275c8e5213197e8dcf3f48822718179",
     "features": "bd08420b615a7ef6c986dc79c14131a148964b4975228fec2a4af5135fda6d6f",
