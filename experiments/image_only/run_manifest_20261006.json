@@ -6,15 +6,28 @@
   "validation_records": 446,
   "image_encoder": "official DINOv3 ViT-L/16",
   "precision": "bf16",
-  "gpus": "8 x NVIDIA RTX A6000 49140 MiB",
-  "docker_image": "munyang-image-only:20261006",
-  "docker_image_id": "sha256:26ddca0d111c4b64f62533a9db7ed98802cda467c08189965851a91594d329de",
+  "gpus": [
+    "8 x NVIDIA RTX A6000 49140 MiB (server 46, initial strict run)",
+    "2 x NVIDIA H200 (server 45, external pseudo-label and Qwen3-VL runs)",
+    "6 x NVIDIA RTX PRO 6000 Blackwell (server 44, external pseudo-label run)"
+  ],
+  "docker_images": {
+    "a6000": "munyang-image-only:20261006",
+    "blackwell": "munyang-image-only:20261006-cu128",
+    "blackwell_image_id": "sha256:7ce55bc6af6c160244824a429cd605b9764e56ce1ff559b7b0529d25d1657390"
+  },
   "results": {
     "validation_in_training": false,
     "image_only_dinov3_end_to_end_f1_at_5": 0.5905829668045044,
     "image_only_dinov3_end_to_end_best_epoch": 5,
+    "image_only_external_pseudo_h200_f1_at_5": 0.5901345014572144,
+    "image_only_external_pseudo_blackwell_f1_at_5": 0.5928251147270203,
+    "image_only_qwen3vl_vision_f1_at_5": 0.578923761844635,
+    "image_only_best_two_dinov3_probability_blend_f1_at_5": 0.6000000238418579,
     "image_only_strict_f1_at_5": 0.573542594909668,
     "multimodal_strict_f1_at_5": 0.5825111865997314,
+    "multimodal_qwen3vl_frozen_f1_at_5": 0.7233183979988098,
+    "multimodal_qwen3vl_last2_f1_at_5": 0.731390118598938,
     "existing_multimodal_ensemble_f1_at_5": 0.8,
     "image_only_target_f1_at_5": 0.83,
     "multimodal_target_f1_at_5": 0.85
@@ -22,7 +35,9 @@
   "sha256": {
     "dinov3_weights": "dcb2e45127cccbf1601e5f42fef165eea275c8e5213197e8dcf3f48822718179",
     "features": "bd08420b615a7ef6c986dc79c14131a148964b4975228fec2a4af5135fda6d6f",
-    "dinov3_end_to_end_strict_checkpoint": "e0c2a6c49d31636d16a071aa87be5e048713bd1d432982ec365785ded322b6be"
+    "dinov3_end_to_end_strict_checkpoint": "e0c2a6c49d31636d16a071aa87be5e048713bd1d432982ec365785ded322b6be",
+    "blackwell_pseudo_checkpoint": "1f31d333eb0f6dde4e8ce9afeb02adfc72902191afcdda16debf9d4a676d814d",
+    "blackwell_pseudo_validation_npz": "ed8282a6040db697a72f52ee2e708901d26e260c2c25fe2658508dca82a3dc90"
   },
   "status": "targets_not_met",
   "limitation": "The original 3954/446 split is preserved and validation is excluded from fitting. No verified strict run reached 83% image-only or 85% multimodal."
