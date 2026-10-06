@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 import numpy as np
-from sklearn.cluster import MiniBatchKMeans
+from sklearn.cluster import KMeans
 
 
 def f1_at_5(scores, targets):
@@ -23,7 +23,7 @@ def predict(query, bank, labels, k, temperature):
 
 
 def representative_indices(features, count, seed):
-    model = MiniBatchKMeans(n_clusters=count, random_state=seed, batch_size=446, n_init=10)
+    model = KMeans(n_clusters=count, random_state=seed, n_init=10)
     assignment = model.fit_predict(features)
     selected = []
     for cluster in range(count):
