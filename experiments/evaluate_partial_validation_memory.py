@@ -57,12 +57,17 @@ def apply_memory(base_scores, targets, selected, alpha):
 
 
 def main():
+    default_input_root = Path("/hosthome") if Path("/hosthome").is_dir() else Path.home()
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input-root", type=Path, default=Path("/hosthome"))
-    parser.add_argument(
-        "--output", type=Path, default=Path("/hosthome/partial_validation_cli_check")
-    )
+    parser.add_argument("--input-root", type=Path, default=default_input_root)
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
+    default_output_name = (
+        "partial_validation_cli_check"
+        if args.input_root == Path("/hosthome")
+        else "partial_validation_cli_check_host"
+    )
+    output = args.output or args.input_root / default_output_name
 
     image_a = np.load(args.input_root / IMAGE_A_FILENAME, allow_pickle=True)
     image_b = np.load(args.input_root / IMAGE_B_FILENAME, allow_pickle=True)
@@ -100,9 +105,9 @@ def main():
         multimodal_adapted[holdout_mask], targets[holdout_mask]
     )
 
-    args.output.mkdir(parents=True, exist_ok=True)
+    output.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
-        args.output / "partial_validation_memory_weights.npz",
+        output / "partial_validation_memory_weights.npz",
         selected_ids=ids[selected],
         selected_targets=targets[selected],
         vocab=vocab,
@@ -110,7 +115,7 @@ def main():
         multimodal_memory_alpha=np.array(MULTIMODAL_MEMORY_ALPHA, dtype=np.float32),
     )
     np.savez_compressed(
-        args.output / "evaluation_predictions.npz",
+        output / "evaluation_predictions.npz",
         ids=ids,
         targets=targets,
         image_probabilities=image_adapted,
@@ -142,7 +147,7 @@ def main():
             "independent generalization. Holdout scores exclude every stored record."
         ),
     }
-    (args.output / "results.json").write_text(
+    (output / "results.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print(f"Image-only: {image_full * 100:.2f}%")
