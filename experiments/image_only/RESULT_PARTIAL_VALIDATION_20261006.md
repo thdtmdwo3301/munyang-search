@@ -34,11 +34,11 @@ unseen-data diagnostic.
 
 ## Reproduction and artifacts
 
-Canonical raw-data prediction and evaluation on server 45:
+Canonical raw-data prediction and evaluation from any repository checkout:
 
 ```bash
-cd /home/mount/SSD_A/hyobin/pattern_multilabel/munyang-search
-bash experiments/run_fixed_end_to_end_srv45.sh
+cd /path/to/munyang-search
+bash experiments/run_fixed_end_to_end.sh
 ```
 
 This command reads the 4,400 raw records, verifies the fixed 3,954/446 seed-42
@@ -49,11 +49,9 @@ files are not accepted as evaluator inputs.
 
 - Versioned adapter weight: `release_20261006/partial_validation_memory_weights.npz`
 - Full DINOv3 checkpoints: GitHub Release `dinov3-partial-val-20261006`
-- Server 45 result: `/home/hyobin/partial_validation_memory/results.json`
-- Server 45 adapter: `/home/hyobin/partial_validation_memory/partial_validation_memory_weights.npz`
 - End-to-end evaluator: `../evaluate_fixed_end_to_end.py`
-- Server 45 launcher: `../run_fixed_end_to_end_srv45.sh`
-- Fresh predictions: `/home/mount/SSD_A/hyobin/pattern_multilabel/fixed_end_to_end_eval/end_to_end_predictions.npz`
-- Fresh metrics: `/home/mount/SSD_A/hyobin/pattern_multilabel/fixed_end_to_end_eval/results.json`
+- Portable launcher: `../run_fixed_end_to_end.sh`
+- Fresh predictions: `${MUNYANG_OUTPUT_ROOT:-../fixed_end_to_end_eval}/end_to_end_predictions.npz`
+- Fresh metrics: `${MUNYANG_OUTPUT_ROOT:-../fixed_end_to_end_eval}/results.json`
 - DINOv3 parameter fine-tuning with representative 40% subset runs separately
   on server 44 and is selected by untouched-holdout F1@5.

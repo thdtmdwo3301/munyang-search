@@ -27,8 +27,14 @@ The lightweight adapter weight is versioned in `release_20261006/`. Full
 DINOv3 checkpoints are distributed through the linked GitHub Release.
 The evaluator shows a batch progress bar for every DINOv3 and multimodal model.
 
-On server 45, run the complete raw-data evaluation with:
+From any checkout that has the default sibling data and weight directories,
+run the complete raw-data evaluation with:
 
 ```bash
-bash experiments/run_fixed_end_to_end_srv45.sh
+bash experiments/run_fixed_end_to_end.sh
 ```
+
+The launcher selects an idle GPU automatically. On a machine with a different
+directory layout, set `MUNYANG_DATA_ROOT`, `MUNYANG_DINOV3_ROOT`, and
+`MUNYANG_RUNTIME_WEIGHTS`; the evaluator and fixed scoring parameters do not
+change.
