@@ -18,8 +18,10 @@ GitHub에서 코드를 받는 경우 저장소 주소를 실제 주소로 바꾼
 코드 ZIP을 풀어서 사용할 수도 있다.
 
 ```bash
-GIT_LFS_SKIP_SMUDGE=1 git clone https://github.com/thdtmdwo3301/munyang-search.git pattern-search
+git lfs install
+git clone https://github.com/thdtmdwo3301/munyang-search.git pattern-search
 cd pattern-search
+git lfs pull --include="assets/**" --exclude=""
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -32,7 +34,7 @@ venv는 다른 시스템으로 복사하지 않고 대상 시스템에서 새로
 ## 가중치·데이터 배치
 
 USB 전체 묶음에는 아래 assets/와 data/가 포함된다.
-코드 묶음에는 텍스트 모델 설정·토크나이저와 검증 대응 목록만 포함한다. 가중치, 원본 이미지와 주석은 기존 전달 자료에서 연결한다.
+GitHub에는 모델 가중치·설정·토크나이저가 포함된다. 원본 이미지와 주석은 별도로 준비한다.
 기존 연구 데이터와 가중치의 공유 범위는 그대로 따른다. 자동 업로드나 외부 전송 기능은 없다.
 
 ```text
@@ -167,40 +169,29 @@ TC3 개별 캡처: --step image와 --step multimodal은 해당 입력 방식의 
 이미지·설명문 대응 확인: data/evaluation_manifest.jsonl은 원본 주석과 seed=42 검증 분할로 작성한 고정 446건 목록이다. 외부 시험기관이 별도 제공한 목록은 아니다. 평가 시 실제 입력의 ID, 이미지 상대 경로, 파일 SHA-256, 설명문 원문을 추론 전에 비교하며 불일치 시 중단한다. input_check.json과 input_pairs.jsonl에 검사 및 실제 입력을 저장한다. --step multimodal은 저장 기록과 현재 파일을 재확인하여 대응 검사 결과를 표시한다. 검사 기록이 없는 과거 실행에는 PASS를 표시하지 않는다.
 
 
-## 최신 코드와 가중치 설치
+## GitHub 가중치 설치
 
-Drive 폴더에는 최신 코드 ZIP과 assets/ 가중치 폴더를 함께 제공한다.
-1. pattern-search-code_20261006.zip을 풀면 pattern-search/ 폴더가 생성된다.
-2. Drive의 assets/weights와 assets/dinov3l을 각각 pattern-search/assets/weights,
-   pattern-search/assets/dinov3l에 넣는다. ZIP에 있는 assets/text는 그대로 유지한다.
-3. 기존 데이터의 images/, annotations/를 pattern-search/data에 넣는다.
-   ZIP에 포함된 evaluation_manifest.jsonl과 evaluation_manifest_info.json은 유지한다.
-4. Python 3.11로 가상환경을 생성하고 requirements.txt를 설치한 뒤 bash run.sh를 실행한다.
+현재 실행에 필요한 가중치와 모델 설정·토크나이저는 assets/에 함께 제공한다.
+큰 파일은 Git LFS로 관리한다. Git LFS를 설치한 후 위 설치 명령을 실행한다.
+XLM-R 가중치는 분할 저장되며 main.py check 또는 bash run.sh 실행 시 자동 복원한다.
+분할 파일과 복원 파일의 SHA-256이 일치해야 복원이 완료된다.
+모든 모델 파일을 검증하려면 python tools/prepare_assets.py --verify를 실행한다.
+GitHub Download ZIP에는 LFS 포인터만 포함될 수 있으므로 git clone과 git lfs pull을 사용한다.
 
-기본 위치로 배치하면 가중치 경로를 변경하지 않아도 된다.
-가중치·데이터를 외부 폴더에 둘 경우 configs/deployment.json의 weights, image_model,
-data를 변경한다. 절대 경로 및 프로젝트 루트 기준 상대 경로를 지원한다.
-data를 변경하면 고정 검증 대응 목록 두 파일도 그 데이터 폴더에 둔다.
-단일 모델 추론·재학습 경로는 별도 configs/single_*.json에서 checkpoint,
-image_processor, feature_image_encoder.model_name 등을 변경한다.
-이 설정과 configs/ensemble.json의 상대 경로는 JSON 파일 폴더 기준이다.
-텍스트 설정·토크나이저 위치를 옮기면 ensemble의 models[].text_model도 변경한다.
-설정 후 python main.py check로 확인한다.
-원본 데이터, venv, 실행 결과 및 캐시는 이번 Drive 배포에 포함하지 않는다.
+원본 데이터는 저장소에 포함하지 않는다. 제공받은 images/와 annotations/를 data/에 배치한다.
+검증 대응 목록이 없다면 python -m tools.create_eval_manifest를 한 번 실행한다.
+이 명령은 원본 4,400건과 seed=42 분할로 검증 446건 목록을 만들며, 기존 목록을 덮어쓰지 않는다.
+그다음 bash run.sh로 실제 추론과 평가·HTML 생성을 실행한다.
+Drive 자료를 이미 보유한 경우 같은 assets/ 구조로 배치해도 된다.
+[Drive 배포 폴더](https://drive.google.com/drive/folders/1EhuOVDmiHiUNQ-pW-0CeBS94jOIDBu6y)
 
-## GitHub에서 설치할 때 추가 자료
-
-[코드·가중치 배포 폴더](https://drive.google.com/drive/folders/1EhuOVDmiHiUNQ-pW-0CeBS94jOIDBu6y)에서 자료를 받는다.
-GitHub에는 원본 연구 데이터, 평가 실행 결과, 가중치를 새로 업로드하지 않는다.
-clone 후 Drive의 코드 ZIP에서 assets/text/, data/evaluation_manifest.jsonl,
-data/evaluation_manifest_info.json, ASSET_MANIFEST.json을 같은 상대 경로로 복사한다.
-Drive의 assets/weights와 assets/dinov3l도 저장소의 assets/ 아래에 넣는다.
-원본 images/와 annotations/는 별도로 제공받은 데이터를 사용한다.
-기존 Git LFS 가중치 포인터는 이전 실험 자료로 유지한다. 최신 실행은 Drive 가중치를 사용하므로
-위 clone 명령은 기존 LFS 가중치의 자동 다운로드를 생략한다.
+가중치 폴더를 변경하려면 configs/deployment.json의 weights와 image_model을 수정한다.
+절대 경로 및 프로젝트 루트 기준 상대 경로를 지원한다.
+단일 모델 추론·재학습은 configs/single_*.json의 checkpoint 등 해당 경로를 변경한다.
+단일 모델 경로에 분할 가중치를 직접 쓰는 경우 먼저 python tools/prepare_assets.py로 복원한다.
 
 ## 이전 실험 자료
 
 inference/, evaluation/, val/, train/README.md, train/RESULT.md와 Windows 배치 파일은
-이전 5종 앙상블 실험 자료다. 현재 배포본의 기본 실행은 Linux/WSL2에서 main.py와 run.sh를 사용한다.
-이전 실험 설명의 모델 구성·점수와 현재 평가 조건을 구분한다.
+이전 5종 앙상블 실험 자료다. 현재 기본 실행은 Linux/WSL2에서 main.py와 run.sh를 사용한다.
+기존 LFS 가중치 경로도 유지하지만 현재 실행은 assets/의 가중치를 사용한다.

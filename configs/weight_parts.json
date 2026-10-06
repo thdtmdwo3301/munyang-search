@@ -1,0 +1,17 @@
+{
+  "file": "xlmr.pt",
+  "size": 2269313066,
+  "sha256": "8d36e5aa307fafbadb060cd9c6da7a59bdee6e278d8f8a66dd2cdf1b89e5e244",
+  "parts": [
+    {
+      "file": "xlmr.pt.part1",
+      "sha256": "3568d3d13758827b2d2cd671d7aee901a44e29e953061a0794f9b728e080ccab",
+      "size": 1887436800
+    },
+    {
+      "file": "xlmr.pt.part2",
+      "sha256": "c23bf05fc7851ec4224b990615323cfa2427f6f67e752547d7d090ecdcfd4cb1",
+      "size": 381876266
+    }
+  ]
+}

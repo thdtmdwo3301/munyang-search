@@ -46,3 +46,16 @@ assets/
 .cache/
 *.tar.gz
 *.local.json
+
+# Published runtime assets
+!assets/
+!assets/**/
+!assets/**/*.json
+!assets/**/*.txt
+!assets/**/*.md
+!assets/**/*.model
+!assets/weights/*.pt
+!assets/weights/*.pt.part*
+!assets/weights/*.npz
+!assets/dinov3l/*.safetensors
+assets/weights/xlmr.pt

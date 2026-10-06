@@ -16,6 +16,8 @@ def read(path):
 
 def check(config, require_gpu=False):
     import torch
+    from tools.prepare_assets import prepare, is_lfs_pointer
+    prepare(config["weights"])
     if sys.version_info[:2] != (3, 11):
         raise RuntimeError("Python 3.11 환경을 사용하세요.")
     names = ["dinov3_end_to_end_strict.pt", "dinov3_pseudopretrain_strict.pt",
@@ -24,10 +26,10 @@ def check(config, require_gpu=False):
         names += ["partial_validation_memory_weights.npz"]
     for name in names:
         path = config["weights"] / name
-        if not path.is_file() or path.stat().st_size < 256:
+        if not path.is_file() or path.stat().st_size < 256 or is_lfs_pointer(path):
             raise FileNotFoundError(f"가중치 파일을 확인하세요: {path}")
     for name in ("config.json", "preprocessor_config.json", "model.safetensors"):
-        if not (config["image_model"] / name).is_file():
+        if not (config["image_model"] / name).is_file() or is_lfs_pointer(config["image_model"] / name):
             raise FileNotFoundError(config["image_model"] / name)
     for name in ("annotations", "images"):
         if not (config["data"] / name).is_dir():
