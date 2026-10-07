@@ -64,7 +64,8 @@
     "url": "https://github.com/thdtmdwo3301/munyang-search/releases/tag/dinov3-partial-val-20261006",
     "assets": {
       "dinov3_end_to_end_strict.pt": "e0c2a6c49d31636d16a071aa87be5e048713bd1d432982ec365785ded322b6be",
-      "dinov3_pseudopretrain_strict.pt": "1f31d333eb0f6dde4e8ce9afeb02adfc72902191afcdda16debf9d4a676d814d"
+      "dinov3_pseudopretrain_strict.pt": "1f31d333eb0f6dde4e8ce9afeb02adfc72902191afcdda16debf9d4a676d814d",
+      "overlap_knn_bank_178.npz": "b4e187817d632d1998641678ad3197d94877b0a44ee449a68b9d865a1ddb4e3e"
     }
   },
   "sha256": {
