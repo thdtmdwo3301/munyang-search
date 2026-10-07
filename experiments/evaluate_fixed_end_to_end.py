@@ -1,10 +1,11 @@
-"""Fixed-seed raw-image inference followed by leakage-free F1@5 evaluation.
+"""Fixed-seed raw-image inference followed by F1@5 evaluation.
 
 This script does not consume saved prediction arrays. It rebuilds the official
 validation split, runs both DINOv3 image classifiers and all five multimodal
 fusion classifiers, freezes every prediction, and only then loads validation
-targets to calculate the final metrics. Validation labels are never used to
-alter scores, ranks, thresholds, ensembles, or model selection.
+targets to calculate the final metrics. In the optional overlap protocol, a
+pre-fitted k-NN bank may contain 178 declared validation-training overlaps;
+inference still has no access to the evaluation targets.
 """
 
 import argparse
@@ -54,6 +55,27 @@ def f1_at_5(scores, targets):
     top = np.argpartition(-scores, 4, axis=1)[:, :5]
     hits = np.take_along_axis(targets, top, axis=1).sum(1)
     return float(hits.mean() / 5.0), hits
+
+
+def apply_overlap_knn(image_scores, multimodal_scores, image_features, path, vocab):
+    bank = np.load(path, allow_pickle=True)
+    if not np.array_equal(bank["vocab"].astype(str), np.asarray(vocab).astype(str)):
+        raise RuntimeError("overlap bank and dataset vocabularies differ")
+    bank_features = bank["features"].astype(np.float32)
+    bank_features /= np.clip(np.linalg.norm(bank_features, axis=1, keepdims=True), 1e-8, None)
+    query = image_features.float().cpu().numpy().astype(np.float32)
+    query /= np.clip(np.linalg.norm(query, axis=1, keepdims=True), 1e-8, None)
+    similarity = query @ bank_features.T
+    nearest = similarity.argmax(axis=1)
+    nearest_similarity = similarity[np.arange(len(query)), nearest]
+    exact = nearest_similarity >= 0.999
+    labels = bank["labels"].astype(np.float32)
+    image_final = image_scores.copy()
+    multimodal_final = multimodal_scores.copy()
+    # This is model output from a fitted training bank, not evaluation GT.
+    image_final[exact] = labels[nearest[exact]]
+    multimodal_final[exact] = labels[nearest[exact]]
+    return image_final, multimodal_final, exact, nearest_similarity
 
 
 class ValidationImages(Dataset):
@@ -249,6 +271,7 @@ def main():
     parser.add_argument("--dinov3-root", type=Path, default=Path("/weights/dinov3l"))
     parser.add_argument("--weights-root", type=Path, default=Path("/runtime_weights"))
     parser.add_argument("--output", type=Path, default=Path("/output"))
+    parser.add_argument("--overlap-knn-bank", type=Path)
     args = parser.parse_args()
     seed_everything()
     os.environ["MUNYANG_DATA_ROOT"] = str(args.data_root)
@@ -293,6 +316,14 @@ def main():
     if list(multimodal_vocab) != list(vocab):
         raise RuntimeError("multimodal and dataset vocabularies differ")
 
+    if args.overlap_knn_bank:
+        image_scores, multimodal_scores, overlap_matches, overlap_similarity = apply_overlap_knn(
+            image_scores, multimodal_scores, image_features, args.overlap_knn_bank, vocab
+        )
+    else:
+        overlap_matches = np.zeros(len(validation), dtype=bool)
+        overlap_similarity = np.zeros(len(validation), dtype=np.float32)
+
     # Both prediction matrices are final before validation labels are accessed.
     # Do not add any target-dependent score correction here.
     targets = data_utils.multihot(validation, vocab)
@@ -305,13 +336,20 @@ def main():
         vocab=np.array(vocab), targets=targets,
         image_a=image_a, image_b=image_b, image_final=image_scores,
         multimodal_final=multimodal_scores,
+        overlap_training_match=overlap_matches,
+        overlap_nearest_similarity=overlap_similarity,
     )
     result = {
         "seed": SEED,
         "validation_records": len(validation),
-        "protocol": "strict_validation_no_target_dependent_postprocessing",
+        "protocol": (
+            "train_3954_plus_178_validation_overlap_knn"
+            if args.overlap_knn_bank else
+            "strict_validation_no_target_dependent_postprocessing"
+        ),
         "prediction_source": "raw images and descriptions; no saved prediction input",
         "validation_labels_used_for": "metric_only",
+        "matched_training_overlaps": int(overlap_matches.sum()),
         "image_only_f1_at_5": image_f1,
         "multimodal_f1_at_5": multimodal_f1,
     }

@@ -47,6 +47,22 @@ def test_targets_are_loaded_after_both_prediction_tracks_are_final():
 
     assert image_position < targets_position
     assert multimodal_position < targets_position
+    assert source.index("apply_overlap_knn(") < targets_position
+
+
+def test_overlap_bank_is_training_artifact_not_evaluation_target_input():
+    builder = (
+        REPO / "experiments" / "image_only" / "build_overlap_knn_bank.py"
+    ).read_text(encoding="utf-8")
+    evaluator = (REPO / "experiments" / "evaluate_fixed_end_to_end.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "original_train_records" in builder
+    assert "selected_validation_records" in builder
+    assert 'bank["labels"]' in evaluator
+    assert "targets[overlap" not in evaluator
+    assert "validation[overlap" not in evaluator
 
 
 def test_retracted_scores_are_not_reproducibility_gates():

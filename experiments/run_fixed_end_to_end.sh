@@ -63,6 +63,14 @@ fi
 
 mkdir -p "$output_root" "$cache_root"
 
+overlap_args=()
+overlap_mount=()
+if [[ -n "${MUNYANG_OVERLAP_KNN_BANK:-}" ]]; then
+  require_path "$MUNYANG_OVERLAP_KNN_BANK"
+  overlap_mount=(-v "$MUNYANG_OVERLAP_KNN_BANK:/overlap_knn_bank.npz:ro")
+  overlap_args=(--overlap-knn-bank /overlap_knn_bank.npz)
+fi
+
 echo "GPU: $gpu_device"
 echo "Data: $data_root"
 echo "Weights: $weights_root"
@@ -79,5 +87,6 @@ docker run --rm \
   -v "$weights_root:/runtime_weights" \
   -v "$output_root:/output" \
   -v "$cache_root:/hf_cache" \
+  "${overlap_mount[@]}" \
   "$docker_image" \
-  bash -lc 'cd /workspace && python experiments/evaluate_fixed_end_to_end.py'
+  bash -lc "cd /workspace && python experiments/evaluate_fixed_end_to_end.py ${overlap_args[*]}"
