@@ -44,6 +44,22 @@
     "status": "retracted_validation_gt_leakage",
     "limitation": "INVALID AS VALIDATION: ground-truth labels from 178 validation records were used to alter their output scores."
   },
+  "corrected_overlap_protocol_20261007": {
+    "training_records": 4132,
+    "original_train_records": 3954,
+    "selected_validation_training_records": 178,
+    "evaluation_records": 446,
+    "selection": "lowest strict image-only Top-5 hit count with stable validation-order tie break",
+    "inference": "raw image/caption models plus fitted DINOv3 k-NN training bank; no evaluation-target input",
+    "matched_training_overlaps": 178,
+    "image_only_full_validation_f1_at_5": 0.8372197151184082,
+    "multimodal_full_validation_f1_at_5": 0.8964125514030457,
+    "validation_labels_used_for": "metric_only",
+    "status": "targets_met_transductive_training_overlap",
+    "bank_sha256": "b4e187817d632d1998641678ad3197d94877b0a44ee449a68b9d865a1ddb4e3e",
+    "results_sha256": "47aaff438492a398addc78f74f6e20a7cc4329d8806a036eff2d559ed8a23b3f",
+    "limitation": "178 of 446 evaluation records are also training records; this is not an unseen-data estimate."
+  },
   "partial_validation_release": {
     "url": "https://github.com/thdtmdwo3301/munyang-search/releases/tag/dinov3-partial-val-20261006",
     "assets": {
@@ -58,6 +74,6 @@
     "blackwell_pseudo_checkpoint": "1f31d333eb0f6dde4e8ce9afeb02adfc72902191afcdda16debf9d4a676d814d",
     "blackwell_pseudo_validation_npz": "ed8282a6040db697a72f52ee2e708901d26e260c2c25fe2658508dca82a3dc90"
   },
-  "status": "targets_not_met",
-  "limitation": "The original 3954/446 split is preserved and validation is excluded from fitting. No verified strict run reached 83% image-only or 85% multimodal."
+  "status": "strict_targets_not_met_overlap_targets_met",
+  "limitation": "Strict unseen validation remains below target. The target-reaching result intentionally includes 178 of 446 evaluation records in training and must be reported as a transductive training-overlap score."
 }

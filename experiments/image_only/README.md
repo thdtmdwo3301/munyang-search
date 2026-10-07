@@ -25,6 +25,15 @@ is prohibited. The previously reported 83.68% image-only and 85.11% multimodal
 numbers used validation-label memory and are invalid as validation metrics; see
 `RESULT_PARTIAL_VALIDATION_20261006.md` for the retraction.
 
+The corrected, user-authorized overlap protocol is different: the original
+3,954 training records and the 178 hardest validation records fit a DINOv3 k-NN
+classifier. At evaluation time, the classifier receives only DINOv3 image
+features and its fitted bank; validation targets are loaded later for F1@5
+calculation only. A raw-data Docker run verified **83.72% image-only** and
+**89.64% multimodal** on all 446 records, with exactly 178 declared training
+overlaps. These are transductive overlap scores, not unseen-data estimates. See
+`RESULT_OVERLAP_KNN_20261007.md`.
+
 The leaked label-memory adapter and its generator were removed from the active
 tree; Git history preserves them for audit only. Full DINOv3 checkpoints are
 distributed through the linked GitHub Release.
@@ -35,6 +44,13 @@ run the complete raw-data evaluation with:
 
 ```bash
 bash experiments/run_fixed_end_to_end.sh
+```
+
+For the declared 178-record overlap protocol, additionally set the fitted bank:
+
+```bash
+MUNYANG_OVERLAP_KNN_BANK=/path/to/overlap_knn_bank_178.npz \
+  bash experiments/run_fixed_end_to_end.sh
 ```
 
 The launcher selects an idle GPU automatically. On a machine with a different
