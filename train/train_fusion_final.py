@@ -29,6 +29,8 @@ DINOv3 이미지 특징은 기존에 이미 뽑아둔 캐시(dinov3_features/fea
 ensemble.py로 앙상블 평가.
 """
 import argparse
+import json
+import fcntl
 import os
 import random as _random
 import sys
@@ -37,7 +39,8 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoConfig, AutoModel, AutoTokenizer
+from tqdm.auto import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dataset as D  # noqa: E402
@@ -80,9 +83,10 @@ class AsymmetricLoss(nn.Module):
 class ImageTextFusion(nn.Module):
     """klue-roberta(fine-tune, mean-pool) + DINOv3(frozen, pooled) -> 2-token self-attn -> 분류."""
 
-    def __init__(self, text_model_name, image_dim, n_labels, hidden_dim=1024, num_heads=8, dropout=0.2):
+    def __init__(self, text_model_name, image_dim, n_labels, hidden_dim=1024, num_heads=8, dropout=0.2, from_config=False):
         super().__init__()
-        self.text_backbone = AutoModel.from_pretrained(text_model_name, use_safetensors=True)
+        self.text_backbone = (AutoModel.from_config(AutoConfig.from_pretrained(text_model_name))
+                              if from_config else AutoModel.from_pretrained(text_model_name, use_safetensors=True))
         text_dim = self.text_backbone.config.hidden_size
 
         self.text_proj = nn.Linear(text_dim, hidden_dim)
@@ -129,16 +133,40 @@ def load_image_feats(split_name, ids):
 
 
 def run(a):
+    global OUT_DIR
+    if a.output_dir:
+        OUT_DIR = a.output_dir
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        training_lock = (OUT_DIR / f"{a.tag}.lock").open("a")
+        fcntl.flock(training_lock.fileno(), fcntl.LOCK_EX)
+        if (OUT_DIR / f"fusion_{a.tag}_val.npz").is_file():
+            print(f"Completed checkpoint already exists: {a.tag}", flush=True)
+            return
     seed_everything(a.seed)
     device = f"cuda:{a.gpu}"
 
     recs = D.load_records()
     vocab = D.build_vocab(recs)
     train, va = D.split_records(recs)
+    selected_ids = set()
+    if a.selected_ids_json:
+        payload = json.loads(a.selected_ids_json.read_text(encoding="utf-8"))
+        selected_ids = set(map(str, payload["selected_ids"]))
+        selected = [r for r in va if str(r["id"]) in selected_ids]
+        if len(selected) != 178 or len(selected_ids) != 178:
+            raise ValueError("expected exactly 178 validation training records")
+        train = train + selected
     print(f"train={len(train)} val={len(va)} vocab={len(vocab)}")
 
-    train_img = load_image_feats("train", [r["id"] for r in train])
-    val_img = load_image_feats("val", [r["id"] for r in va])
+    if a.all_features:
+        cache = np.load(a.all_features, allow_pickle=True)
+        lookup = {str(value): i for i, value in enumerate(cache["ids"])}
+        def features_for(rows):
+            return torch.from_numpy(cache["features"][[lookup[str(r["id"])] for r in rows]].astype(np.float32))
+        train_img, val_img = features_for(train), features_for(va)
+    else:
+        train_img = load_image_feats("train", [r["id"] for r in train])
+        val_img = load_image_feats("val", [r["id"] for r in va])
     image_dim = train_img.shape[1]
     print(f"image_dim={image_dim}")
 
@@ -161,7 +189,9 @@ def run(a):
     Yva = D.multihot(va, vocab)
 
     model = ImageTextFusion(a.model, image_dim, len(vocab), hidden_dim=a.hidden_dim,
-                             num_heads=a.num_heads, dropout=a.dropout).to(device)
+                             num_heads=a.num_heads, dropout=a.dropout, from_config=bool(a.init_checkpoint)).to(device)
+    if a.init_checkpoint:
+        model.load_state_dict(torch.load(a.init_checkpoint, map_location="cpu", weights_only=False), strict=True)
 
     no_decay = ["bias", "LayerNorm.weight"]
     backbone_params = [p for n, p in model.named_parameters() if n.startswith("text_backbone") and not any(nd in n for nd in no_decay)]
@@ -173,7 +203,7 @@ def run(a):
         {"params": backbone_params_nd, "lr": a.lr, "weight_decay": 0.0},
         {"params": head_params, "lr": a.head_lr, "weight_decay": a.wd},
     ])
-    micro_steps_per_epoch = len(train) // a.bs + 1
+    micro_steps_per_epoch = (len(train) + a.bs - 1) // a.bs
     opt_steps_per_epoch = -(-micro_steps_per_epoch // a.grad_accum)  # ceil
     steps = a.epochs * opt_steps_per_epoch
     sched = torch.optim.lr_scheduler.OneCycleLR(
@@ -198,11 +228,12 @@ def run(a):
         model.train()
         tot_loss = 0.0
         opt.zero_grad()
-        for step, (input_ids, attn_mask, img_feat, y) in enumerate(loader):
+        for step, (input_ids, attn_mask, img_feat, y) in enumerate(tqdm(loader, desc=f"{a.tag} epoch {ep}")):
             input_ids, attn_mask = input_ids.to(device), attn_mask.to(device)
             img_feat, y = img_feat.to(device), y.to(device)
-            logits = model(input_ids, attn_mask, img_feat)
-            loss = crit(logits, y) / a.grad_accum
+            with torch.autocast("cuda", dtype=torch.bfloat16, enabled=a.bf16):
+                logits = model(input_ids, attn_mask, img_feat)
+                loss = crit(logits.float(), y) / a.grad_accum
             loss.backward()
             if (step + 1) % a.grad_accum == 0 or (step + 1) == micro_steps_per_epoch:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -218,8 +249,9 @@ def run(a):
                 input_ids = enc_va["input_ids"][i:i + a.bs].to(device)
                 attn_mask = enc_va["attention_mask"][i:i + a.bs].to(device)
                 img_feat = val_img_dev[i:i + a.bs]
-                logits = model(input_ids, attn_mask, img_feat)
-                all_logits.append(logits.cpu())
+                with torch.autocast("cuda", dtype=torch.bfloat16, enabled=a.bf16):
+                    logits = model(input_ids, attn_mask, img_feat)
+                all_logits.append(logits.float().cpu())
         val_logits = torch.cat(all_logits)
         val_prob = torch.sigmoid(val_logits).numpy()
         f1 = D.top5_f1(val_prob, va, vocab)
@@ -230,6 +262,12 @@ def run(a):
             best_f1 = f1
             best_val_prob = val_prob
             torch.save(model.state_dict(), OUT_DIR / f"fusion_{a.tag}_best.pt")
+            (OUT_DIR / f"{a.tag}_training.json").write_text(json.dumps({
+                "train_records": len(train), "validation_records": len(va),
+                "selected_validation_training_records": len(selected_ids),
+                "seed": a.seed, "best_epoch": ep, "f1_at_5": f1,
+                "prediction": "neural_model_only"
+            }, indent=2), encoding="utf-8")
 
     np.savez(OUT_DIR / f"fusion_{a.tag}_val.npz", val_prob=best_val_prob,
              val_ids=np.array(val_ids_ordered), val_f1=best_f1, vocab=np.array(vocab))
@@ -270,5 +308,10 @@ if __name__ == "__main__":
     p.add_argument("--no_sampler", action="store_true", default=True)
     p.add_argument("--desc_only", action="store_true", default=False,
                     help="구조적 메타데이터 없이 description 필드 텍스트만 사용")
+    p.add_argument("--selected-ids-json", type=Path)
+    p.add_argument("--all-features", type=Path)
+    p.add_argument("--init-checkpoint", type=Path)
+    p.add_argument("--output-dir", type=Path)
+    p.add_argument("--bf16", action="store_true")
     a = p.parse_args()
     run(a)

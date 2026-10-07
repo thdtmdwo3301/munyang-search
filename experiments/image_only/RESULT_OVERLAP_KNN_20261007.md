@@ -1,5 +1,9 @@
 # DINOv3 178-record training-overlap result (2026-10-07)
 
+> Historical k-NN diagnostic only. This was not neural retraining. The canonical
+> evaluator no longer supports this score override; do not use this result to
+> describe the newly retrained neural checkpoints.
+
 ## Verified outcome
 
 | Input | Full validation F1@5 | Target | Status |

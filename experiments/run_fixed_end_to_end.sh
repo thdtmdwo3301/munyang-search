@@ -24,10 +24,11 @@ require_path "$data_root/annotations"
 require_path "$data_root/images"
 require_path "$dinov3_root/config.json"
 require_path "$dinov3_root/model.safetensors"
-for filename in \
-  dinov3_end_to_end_strict.pt \
-  dinov3_pseudopretrain_strict.pt \
-  klue.pt kcbert.pt mbert.pt kobigbird.pt; do
+if [[ ! -f "$weights_root/image_classifier.pt" ]]; then
+  require_path "$weights_root/dinov3_end_to_end_strict.pt"
+  require_path "$weights_root/dinov3_pseudopretrain_strict.pt"
+fi
+for filename in klue.pt kcbert.pt mbert.pt kobigbird.pt; do
   require_path "$weights_root/$filename"
 done
 if [[ ! -f "$weights_root/xlmr.pt" ]]; then
@@ -63,14 +64,6 @@ fi
 
 mkdir -p "$output_root" "$cache_root"
 
-overlap_args=()
-overlap_mount=()
-if [[ -n "${MUNYANG_OVERLAP_KNN_BANK:-}" ]]; then
-  require_path "$MUNYANG_OVERLAP_KNN_BANK"
-  overlap_mount=(-v "$MUNYANG_OVERLAP_KNN_BANK:/overlap_knn_bank.npz:ro")
-  overlap_args=(--overlap-knn-bank /overlap_knn_bank.npz)
-fi
-
 echo "GPU: $gpu_device"
 echo "Data: $data_root"
 echo "Weights: $weights_root"
@@ -87,6 +80,5 @@ docker run --rm \
   -v "$weights_root:/runtime_weights" \
   -v "$output_root:/output" \
   -v "$cache_root:/hf_cache" \
-  "${overlap_mount[@]}" \
   "$docker_image" \
-  bash -lc "cd /workspace && python experiments/evaluate_fixed_end_to_end.py ${overlap_args[*]}"
+  bash -lc 'cd /workspace && python experiments/evaluate_fixed_end_to_end.py'

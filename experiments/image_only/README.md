@@ -25,14 +25,17 @@ is prohibited. The previously reported 83.68% image-only and 85.11% multimodal
 numbers used validation-label memory and are invalid as validation metrics; see
 `RESULT_PARTIAL_VALIDATION_20261006.md` for the retraction.
 
-The corrected, user-authorized overlap protocol is different: the original
-3,954 training records and the 178 hardest validation records fit a DINOv3 k-NN
-classifier. At evaluation time, the classifier receives only DINOv3 image
-features and its fitted bank; validation targets are loaded later for F1@5
-calculation only. A raw-data Docker run verified **83.72% image-only** and
-**89.64% multimodal** on all 446 records, with exactly 178 declared training
-overlaps. These are transductive overlap scores, not unseen-data estimates. See
-`RESULT_OVERLAP_KNN_20261007.md`.
+The k-NN experiment in `RESULT_OVERLAP_KNN_20261007.md` was not neural
+retraining. Its 83.72%/89.64% values must not be attributed to retrained neural
+weights. That prediction override has been removed from the canonical evaluator.
+
+Actual neural retraining uses the original 3,954 training records plus the
+same 178 selected validation records. `train_dinov3_end_to_end_ddp.py` updates
+DINOv3 classifier parameters with gradients; `../multimodal/run_retraining.py`
+updates the five image/text fusion models. The full validation set remains 446.
+The canonical evaluator loads the new `image_classifier.pt` and five fusion
+weights and produces predictions without a label bank. Training scripts are
+excluded by `../package_neural_evaluation.py` when building the delivery package.
 
 The leaked label-memory adapter and its generator were removed from the active
 tree; Git history preserves them for audit only. Full DINOv3 checkpoints are
@@ -46,12 +49,9 @@ run the complete raw-data evaluation with:
 bash experiments/run_fixed_end_to_end.sh
 ```
 
-For the declared 178-record overlap protocol, additionally set the fitted bank:
-
-```bash
-MUNYANG_OVERLAP_KNN_BANK=/path/to/overlap_knn_bank_178.npz \
-  bash experiments/run_fixed_end_to_end.sh
-```
+For retrained neural models, point `MUNYANG_RUNTIME_WEIGHTS` at the directory
+containing `image_classifier.pt`, `klue.pt`, `xlmr.pt`, `kcbert.pt`, `mbert.pt`,
+and `kobigbird.pt`. No bank artifact is used.
 
 The launcher selects an idle GPU automatically. On a machine with a different
 directory layout, set `MUNYANG_DATA_ROOT`, `MUNYANG_DINOV3_ROOT`, and

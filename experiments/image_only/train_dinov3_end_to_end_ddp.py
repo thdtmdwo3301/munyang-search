@@ -16,6 +16,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from torchvision import transforms
 from transformers import AutoModel, get_cosine_schedule_with_warmup
+from tqdm.auto import tqdm
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -61,11 +62,12 @@ class DinoClassifier(nn.Module):
         )
         for parameter in self.backbone.parameters():
             parameter.requires_grad_(False)
-        blocks = self.backbone.layer
+        core = getattr(self.backbone, "model", self.backbone)
+        blocks = core.layer
         for block in blocks[-unfreeze_blocks:]:
             for parameter in block.parameters():
                 parameter.requires_grad_(True)
-        for parameter in self.backbone.norm.parameters():
+        for parameter in core.norm.parameters():
             parameter.requires_grad_(True)
         dim = self.backbone.config.hidden_size * 2
         self.head = nn.Sequential(
@@ -129,6 +131,9 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--selected-ids-json")
     parser.add_argument("--selection-method", default="kmeans_representative")
+    parser.add_argument("--init-checkpoint", type=Path)
+    parser.add_argument("--weak-augmentation", action="store_true")
+    parser.add_argument("--select-metric", choices=["full", "holdout"], default="holdout")
     args = parser.parse_args()
     rank, world, local_rank = init_distributed()
     device = torch.device("cuda", local_rank)
@@ -167,6 +172,8 @@ def main():
         transforms.ToTensor(),
         transforms.Normalize(MEAN, STD),
     ])
+    if args.weak_augmentation:
+        train_transform = val_transform
     train_dataset = PatternDataset(train_records, vocab, train_transform)
     val_dataset = PatternDataset(val_records, vocab, val_transform)
     holdout_dataset = PatternDataset(holdout_records, vocab, val_transform)
@@ -184,6 +191,15 @@ def main():
     model = DinoClassifier(
         args.model_path, len(vocab), args.unfreeze_blocks, args.dropout
     ).to(device)
+    if args.init_checkpoint:
+        state = torch.load(args.init_checkpoint, map_location="cpu", weights_only=False)["state_dict"]
+        keys = set(model.state_dict())
+        compatible = {}
+        for key, value in state.items():
+            nested = key.replace("backbone.layer.", "backbone.model.layer.", 1)
+            flat = key.replace("backbone.model.layer.", "backbone.layer.", 1)
+            compatible[key if key in keys else nested if nested in keys else flat] = value
+        model.load_state_dict(compatible, strict=True)
     model = DDP(model, device_ids=[local_rank])
     backbone = [p for n, p in model.module.named_parameters() if n.startswith("backbone") and p.requires_grad]
     head = [p for n, p in model.module.named_parameters() if n.startswith("head") and p.requires_grad]
@@ -205,7 +221,7 @@ def main():
         model.train()
         optimizer.zero_grad(set_to_none=True)
         loss_sum = 0.0
-        for step, (pixels, targets) in enumerate(train_loader, 1):
+        for step, (pixels, targets) in enumerate(tqdm(train_loader, desc=f"Train epoch {epoch}", disable=rank != 0), 1):
             pixels = pixels.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
             with torch.autocast("cuda", dtype=torch.bfloat16):
@@ -225,14 +241,21 @@ def main():
                 f"epoch={epoch}/{args.epochs} loss={loss_sum / len(train_loader):.5f} "
                 f"full_val_F1@5={full_score:.4f} holdout_F1@5={holdout_score:.4f}", flush=True,
             )
-            if holdout_score > best[0]:
+            selection_score = full_score if args.select_metric == "full" else holdout_score
+            previous_score = best[1] if args.select_metric == "full" else best[0]
+            if selection_score > previous_score:
                 best = (
                     holdout_score,
                     full_score,
                     epoch,
-                    {key: value.detach().cpu() for key, value in model.module.state_dict().items()},
+                    {key: value.detach().cpu().clone() for key, value in model.module.state_dict().items()},
                     probabilities,
                 )
+                args.output.mkdir(parents=True, exist_ok=True)
+                torch.save({"state_dict": best[3], "vocab": vocab, "best_epoch": epoch,
+                            "full_validation_f1_at_5": full_score, "holdout_f1_at_5": holdout_score,
+                            "train_records": len(train_records), "selected_validation_records": len(selected_records)},
+                           args.output / "image_classifier.pt")
         dist.barrier()
 
     if rank == 0:
