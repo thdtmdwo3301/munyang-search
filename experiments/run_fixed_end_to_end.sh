@@ -27,8 +27,7 @@ require_path "$dinov3_root/model.safetensors"
 for filename in \
   dinov3_end_to_end_strict.pt \
   dinov3_pseudopretrain_strict.pt \
-  klue.pt kcbert.pt mbert.pt kobigbird.pt \
-  partial_validation_memory_weights.npz; do
+  klue.pt kcbert.pt mbert.pt kobigbird.pt; do
   require_path "$weights_root/$filename"
 done
 if [[ ! -f "$weights_root/xlmr.pt" ]]; then

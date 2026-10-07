@@ -18,13 +18,16 @@ epoch. The October 6 strict run reached 59.06% F1@5; this is below the requested
 
 `../evaluate_fixed_end_to_end.py` is the canonical evaluator. It reads the raw
 images, annotations, and descriptions, reconstructs the seed-42 validation
-split, runs both DINOv3 classifiers and all five multimodal fusion classifiers,
-applies the released label-memory adapter, and only then reads ground truth to
-calculate F1@5. It rejects any run that does not reproduce 83.68% image-only
-and 85.11% multimodal F1@5. See `RESULT_PARTIAL_VALIDATION_20261006.md`.
+split, and runs both DINOv3 classifiers and all five multimodal fusion
+classifiers. Every prediction is frozen before validation targets are loaded,
+and targets are used only to calculate F1@5. Target-dependent score correction
+is prohibited. The previously reported 83.68% image-only and 85.11% multimodal
+numbers used validation-label memory and are invalid as validation metrics; see
+`RESULT_PARTIAL_VALIDATION_20261006.md` for the retraction.
 
-The lightweight adapter weight is versioned in `release_20261006/`. Full
-DINOv3 checkpoints are distributed through the linked GitHub Release.
+The leaked label-memory adapter and its generator were removed from the active
+tree; Git history preserves them for audit only. Full DINOv3 checkpoints are
+distributed through the linked GitHub Release.
 The evaluator shows a batch progress bar for every DINOv3 and multimodal model.
 
 From any checkout that has the default sibling data and weight directories,

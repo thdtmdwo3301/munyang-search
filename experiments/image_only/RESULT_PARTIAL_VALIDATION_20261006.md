@@ -1,4 +1,10 @@
-# Partial-validation target run (2026-10-06)
+# RETRACTED: target-dependent validation correction (2026-10-06)
+
+> **Do not report 83.68% or 85.11% as validation performance.** The released
+> adapter stores ground-truth labels for 178 validation samples and changes
+> their 22 output scores using those labels. This is validation GT leakage,
+> regardless of whether labels are copied directly or injected through score
+> arithmetic. The canonical evaluator no longer loads this adapter.
 
 ## Outcome
 
@@ -11,10 +17,12 @@ into training. A single image-hard subset is shared by both systems. The other
 | Image only, DINOv3 ensemble + label-memory adapter | **83.68%** | 83% | 72.84% |
 | Image + caption, five-model ensemble + label-memory adapter | **85.11%** | 85% | 82.84% |
 
-Both requested full-validation thresholds are met without a 100% aggregate
-score. These are partially seen, transductive results. They must not be
-described as independent generalization; the holdout column is the appropriate
-unseen-data diagnostic.
+The full-validation columns above are invalid as validation metrics and are
+kept only to document the retracted experiment. The untouched 268-sample
+column is not a replacement for the original fixed 446-sample validation set,
+because the 178 samples were selected using validation difficulty. A new
+strict run must evaluate all 446 samples without target-dependent fitting,
+selection, score correction, or post-processing.
 
 ## Method
 
@@ -34,7 +42,7 @@ unseen-data diagnostic.
 
 ## Reproduction and artifacts
 
-Canonical raw-data prediction and evaluation from any repository checkout:
+Leakage-free raw-data prediction and evaluation from any repository checkout:
 
 ```bash
 cd /path/to/munyang-search
@@ -43,11 +51,13 @@ bash experiments/run_fixed_end_to_end.sh
 
 This command reads the 4,400 raw records, verifies the fixed 3,954/446 seed-42
 split and 22-label vocabulary, performs fresh inference from images and raw
-descriptions, applies the released training memory by stored record ID, and
-evaluates only after predictions have been finalized. Saved prediction NPZ
-files are not accepted as evaluator inputs.
+descriptions, freezes all scores, and then loads validation targets for metric
+calculation only. Saved prediction NPZ files and the deprecated label-memory
+adapter are not accepted as evaluator inputs.
 
-- Versioned adapter weight: `release_20261006/partial_validation_memory_weights.npz`
+- The adapter weight and generator were removed from the active tree. They
+  remain available only in Git history for audit and must not be used for
+  validation evaluation.
 - Full DINOv3 checkpoints: GitHub Release `dinov3-partial-val-20261006`
 - End-to-end evaluator: `../evaluate_fixed_end_to_end.py`
 - Portable launcher: `../run_fixed_end_to_end.sh`

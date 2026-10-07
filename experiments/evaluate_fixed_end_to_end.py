@@ -1,9 +1,10 @@
-"""Fixed-seed raw-image inference followed by the released F1@5 evaluation.
+"""Fixed-seed raw-image inference followed by leakage-free F1@5 evaluation.
 
 This script does not consume saved prediction arrays. It rebuilds the official
 validation split, runs both DINOv3 image classifiers and all five multimodal
-fusion classifiers, applies the fixed partial-validation memory adapter, and
-only then calculates the final metrics.
+fusion classifiers, freezes every prediction, and only then loads validation
+targets to calculate the final metrics. Validation labels are never used to
+alter scores, ranks, thresholds, ensembles, or model selection.
 """
 
 import argparse
@@ -31,11 +32,6 @@ import dataset as data_utils  # noqa: E402
 
 SEED = 42
 IMAGE_B_WEIGHT = 0.54
-VALIDATION_TRAIN_FRACTION = 0.40
-IMAGE_MEMORY_ALPHA = 0.20
-MULTIMODAL_MEMORY_ALPHA = 0.05033
-EXPECTED_IMAGE_F1 = 0.8367713093757629
-EXPECTED_MULTIMODAL_F1 = 0.8511210680007935
 BATCH_SIZE = 24
 DEVICE = "cuda:0"
 MEAN = (0.485, 0.456, 0.406)
@@ -247,33 +243,6 @@ def infer_multimodal(config_path, weights_root, records, image_features, device,
     return probabilities, config["label_vocab"]
 
 
-def apply_released_memory(image_scores, multimodal_scores, ids, vocab, weight_path):
-    adapter = np.load(weight_path, allow_pickle=True)
-    if list(adapter["vocab"].astype(str)) != list(vocab):
-        raise RuntimeError("adapter and dataset vocabularies differ")
-    row_by_id = {value: index for index, value in enumerate(ids)}
-    selected_ids = adapter["selected_ids"].astype(str)
-    missing = [value for value in selected_ids if value not in row_by_id]
-    if missing:
-        raise RuntimeError(f"{len(missing)} adapter IDs are absent from evaluation data")
-    selected = np.array([row_by_id[value] for value in selected_ids])
-    if len(selected) != round(len(ids) * VALIDATION_TRAIN_FRACTION):
-        raise RuntimeError("released adapter does not contain the fixed 40% subset")
-    selected_targets = adapter["selected_targets"].astype(np.float32)
-    memory = selected_targets * 2.0 + (1.0 - selected_targets) * -2.0
-    image_final = image_scores.copy()
-    multimodal_final = multimodal_scores.copy()
-    image_final[selected] = (
-        (1.0 - IMAGE_MEMORY_ALPHA) * image_final[selected]
-        + IMAGE_MEMORY_ALPHA * memory
-    )
-    multimodal_final[selected] = (
-        (1.0 - MULTIMODAL_MEMORY_ALPHA) * multimodal_final[selected]
-        + MULTIMODAL_MEMORY_ALPHA * memory
-    )
-    return image_final, multimodal_final, selected
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-root", type=Path, default=Path("/data"))
@@ -324,37 +293,31 @@ def main():
     if list(multimodal_vocab) != list(vocab):
         raise RuntimeError("multimodal and dataset vocabularies differ")
 
-    image_final, multimodal_final, selected = apply_released_memory(
-        image_scores, multimodal_scores, ids, vocab,
-        args.weights_root / "partial_validation_memory_weights.npz",
-    )
-    # Ground-truth labels are first accessed here, after every prediction is fixed.
+    # Both prediction matrices are final before validation labels are accessed.
+    # Do not add any target-dependent score correction here.
     targets = data_utils.multihot(validation, vocab)
-    image_f1, _ = f1_at_5(image_final, targets)
-    multimodal_f1, _ = f1_at_5(multimodal_final, targets)
+    image_f1, _ = f1_at_5(image_scores, targets)
+    multimodal_f1, _ = f1_at_5(multimodal_scores, targets)
     args.output.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
         args.output / "end_to_end_predictions.npz",
         ids=np.array(ids),
         vocab=np.array(vocab), targets=targets,
-        image_a=image_a, image_b=image_b, image_final=image_final,
-        multimodal_raw=multimodal_scores, multimodal_final=multimodal_final,
-        selected_indices=selected,
+        image_a=image_a, image_b=image_b, image_final=image_scores,
+        multimodal_final=multimodal_scores,
     )
     result = {
         "seed": SEED,
         "validation_records": len(validation),
+        "protocol": "strict_validation_no_target_dependent_postprocessing",
         "prediction_source": "raw images and descriptions; no saved prediction input",
+        "validation_labels_used_for": "metric_only",
         "image_only_f1_at_5": image_f1,
         "multimodal_f1_at_5": multimodal_f1,
     }
     (args.output / "results.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    if abs(image_f1 - EXPECTED_IMAGE_F1) > 1e-7:
-        raise RuntimeError(f"image-only reproducibility gate failed: {image_f1:.9f}")
-    if abs(multimodal_f1 - EXPECTED_MULTIMODAL_F1) > 1e-7:
-        raise RuntimeError(f"multimodal reproducibility gate failed: {multimodal_f1:.9f}")
     print(f"Image-only: {image_f1 * 100:.2f}%")
     print(f"Multimodal: {multimodal_f1 * 100:.2f}%")
 
