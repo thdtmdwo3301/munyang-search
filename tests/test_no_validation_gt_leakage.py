@@ -23,6 +23,10 @@ def test_canonical_evaluator_has_no_validation_label_memory():
         assert token not in evaluator
         assert token not in launcher
 
+    # learner-night creates /workspace/continual during container startup.
+    assert '-v "$repo_root:/workspace"' in launcher
+    assert '-v "$repo_root:/workspace:ro"' not in launcher
+
     assert not (REPO / "experiments" / "evaluate_partial_validation_memory.py").exists()
     assert not (
         REPO

@@ -73,7 +73,7 @@ docker run --rm \
   --gpus "device=$gpu_device" \
   --shm-size=32g --ipc=host \
   -e HF_HOME=/hf_cache \
-  -v "$repo_root:/workspace:ro" \
+  -v "$repo_root:/workspace" \
   -v "$data_root:/data:ro" \
   -v "$dinov3_root:/weights/dinov3l:ro" \
   -v "$weights_root:/runtime_weights" \
