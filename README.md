@@ -4,6 +4,16 @@
 평가, HTML 시각화, 입력별 결과 조회, 공통 모듈 재학습을 제공한다.
 Docker는 필수가 아니다.
 
+## Windows / Linux 데스크톱 학습 프로그램
+
+비전문가용 데이터 등록·추가 학습·평가·추론 프로그램은 [desktop-training](desktop-training/README.md)에 별도로 제공합니다. 기존 연구용 코드는 그대로 유지합니다.
+
+- [데스크톱 0.13 설치 ZIP 및 가중치](https://github.com/thdtmdwo3301/munyang-search/releases/tag/desktop-v0.13)
+- Windows: 설치 ZIP 압축 해제 → `install-windows.bat` → `start-windows.bat`.
+- Linux: 설치 ZIP 압축 해제 → `bash install-linux.sh --cpu` 또는 `--gpu` → `bash start-linux.sh`.
+
+Python 3.11 64비트가 필요합니다. 설치기가 가중치 6개를 자동 다운로드·검증·복원합니다. 아래 설명은 기존 연구 코드 기준이며, 데스크톱 프로그램 사용자는 위 별도 설명서를 따르세요.
+
 ## 사용 설명서
 
 - [전문가용 모듈 전체 기능 및 API 연결 설명서](docs/전문가용_모듈_전체기능_API_연결법.md)

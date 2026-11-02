@@ -1,0 +1,12 @@
+workspace/
+weight_parts/
+.venv/
+.venv-linux/
+__pycache__/
+*.pyc
+*.partial
+*.zip
+*.part*
+test-output/
+tmp*/
+.env
