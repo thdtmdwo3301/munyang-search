@@ -402,6 +402,28 @@ class DesktopTests(unittest.TestCase):
         self.assertFalse(self.window.actions_waiting)
         self.assertTrue(self.window.infer_files_button.isEnabled())
 
+    def test_standard_training_labels_keep_values_and_help(self):
+        from core import TRAIN_DEFAULTS
+        form = self.window.advanced_panel.layout()
+        for widget, title in ((self.window.epochs, '에폭'), (self.window.batch, '배치 크기'), (self.window.lr, '학습률')):
+            self.assertEqual(form.labelForField(widget).text(), title)
+            self.assertTrue(widget.toolTip().startswith(title + ':'))
+        before = self.window.settings()
+        self.window.toggle_advanced()
+        self.assertEqual(self.window.settings(), before)
+        self.assertEqual(self.window.epochs.value(), TRAIN_DEFAULTS['epochs'])
+        self.assertEqual(self.window.batch.currentData(), TRAIN_DEFAULTS['batch'])
+        self.assertEqual(self.window.lr.value(), TRAIN_DEFAULTS['lr'])
+        self.window.epochs.setValue(5); self.window.batch.setCurrentIndex(self.window.batch.findData(4)); self.window.lr.setValue(.0002)
+        settings = self.window.settings()
+        self.assertEqual((settings['epochs'], settings['batch'], settings['lr']), (5, 4, .0002))
+        self.window.toggle_advanced()
+        self.assertEqual(self.window.settings(), before)
+        if os.environ.get('PATTERN_UI_CAPTURE') == '1':
+            self.window.toggle_advanced(); self.window.nav.setCurrentRow(1); self.qt.processEvents()
+            self.window.stack.widget(1).ensureWidgetVisible(self.window.advanced_panel, 0, 20); self.qt.processEvents()
+            self.window.grab().save(str(Path(__file__).absolute().parent.parent/'test-output'/'training-labels-v0151.png'))
+
     def test_plain_language_prediction_summary(self):
         from core import LABELS
         top=LABELS[:3]+LABELS[5:7]

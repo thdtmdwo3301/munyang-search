@@ -8,7 +8,7 @@ Docker는 필수가 아니다.
 
 비전문가용 데이터 등록·추가 학습·평가·추론 프로그램은 [desktop-training](desktop-training/README.md)에 별도로 제공합니다. 기존 연구용 코드는 그대로 유지합니다.
 
-- [데스크톱 0.15 설치 ZIP](https://github.com/thdtmdwo3301/munyang-search/releases/tag/desktop-v0.15) — 여러 이미지·폴더 일괄 추론과 이전/다음 결과 보기, 가중치 다른 이름으로 저장·ZIP 불러오기 지원.
+- [데스크톱 0.15.1 설치 ZIP](https://github.com/thdtmdwo3301/munyang-search/releases/tag/desktop-v0.15.1) — 에폭·배치 크기·학습률 표시 정리. 여러 이미지 추론·이전/다음 보기와 가중치 저장·불러오기 지원.
 - [기준 가중치 조각 / 0.13 보관본](https://github.com/thdtmdwo3301/munyang-search/releases/tag/desktop-v0.13) — 설치기가 자동으로 사용하며 수동으로 받을 필요가 없습니다.
 - Windows: 설치 ZIP 압축 해제 → `install-windows.bat` → `start-windows.bat`.
 - Linux: 설치 ZIP 압축 해제 → `bash install-linux.sh --cpu` 또는 `--gpu` → `bash start-linux.sh`.

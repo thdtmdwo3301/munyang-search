@@ -1,3 +1,9 @@
+# 0.15.1 학습 설정 용어 정리 — 2026-11-03
+
+- 고급 설정 표시를 에폭·배치 크기·학습률로 변경. 기본값 안내도 같은 용어로 통일하고 도움말에 의미를 유지.
+- 기존 컨테이너에서 표시명·도움말·기본값·고급 설정 입력 및 초기화 검사 2개 통과. 화면 캡처로 표시 확인. 근거: test-output/publish_v0151/labels-tests.log, test-output/training-labels-v0151.png.
+- desktop.py/app_service.py는 문자열을 제외한 AST가 이전 0.15와 동일. core.py/worker.py/bert5_engine.py/model_archive.py/install_weights.py/weight_sources.json은 바이트 동일. 학습·추론·가중치 검증을 불필요하게 반복하지 않음. 근거: test-output/publish_v0151/calculation-unchanged.json.
+
 # 0.15 여러 이미지 추론 — 2026-11-03
 
 - 여러 파일/폴더 선택, 이전·다음 이동, 이미지와 Top-5 짝 유지, 이미지별 BERT 설명문, 새 선택 시 화면 결과 초기화, 실행 중 입력/모델 변경 차단 확인. 폴더는 바로 아래 이미지에 한정하며 링크/NAS/개수·크기 초과/손상 파일을 거부.
