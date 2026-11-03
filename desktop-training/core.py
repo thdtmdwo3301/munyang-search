@@ -308,12 +308,12 @@ class Store:
 
     def training_plan(self,request):
         rows=self.rows(request.get('dataset_ids')); counts=Counter(r['split'] for r in rows)
-        if not counts['train']: raise ValueError('학습용(train) 이미지가 최소 한 장 필요합니다. 개발·평가 이미지를 학습용으로 자동 변경하지 않습니다.')
+        if not counts['train']: raise ValueError('학습용(train) 이미지가 최소 한 장 필요합니다. 검증·평가(테스트) 이미지를 학습용으로 자동 변경하지 않습니다.')
         self.check_model_available(request.get('model_id'))
         model=read(self.item('models',request.get('model_id'))/'manifest.json')
         if not supports_training(model): raise ValueError('추가 학습을 지원하지 않는 모델입니다.')
         if model.get('engine')=='bert5_fusion_v1' and any(not r.get('description','').strip() for r in rows):
-            raise ValueError('5종 BERT 모델은 모든 학습·개발·평가 이미지에 설명문이 필요합니다. labels.csv의 description을 입력하세요. 이미지 전용 모델과 평가 조건이 다릅니다.')
+            raise ValueError('5종 BERT 모델은 모든 학습·검증·평가(테스트) 이미지에 설명문이 필요합니다. labels.csv의 description을 입력하세요. 이미지 전용 모델과 평가 조건이 다릅니다.')
         epochs=int(request.get('epochs',TRAIN_DEFAULTS['epochs'])); batch=int(request.get('batch',TRAIN_DEFAULTS['batch'])); lr=float(request.get('lr',TRAIN_DEFAULTS['lr']))
         if not 1<=epochs<=500 or batch not in (1,2,4,8,16,32) or not math.isfinite(lr) or not 1e-7<=lr<=0.01: raise ValueError('학습 설정 범위를 확인하세요.')
         device=request.get('device','cpu')

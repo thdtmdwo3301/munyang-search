@@ -94,7 +94,7 @@ class DesktopTests(unittest.TestCase):
         model = self.service.store.item('models', 'base'); model.mkdir()
         write(model / 'manifest.json', {'id': 'base', 'name': '테스트 구성', 'has_head': False})
         self.window.refresh(); self.window.plan_button.click(); self.wait_task()
-        self.assertIn('학습 1장 / 개발 1장 / 평가 1장', self.window.plan_label.text())
+        self.assertIn('학습 1장 / 검증 1장 / 평가(테스트) 1장', self.window.plan_label.text())
         self.assertEqual(self.window.settings()['batch'], 8)
 
     def test_registration_error_not_freeze(self):
@@ -288,6 +288,7 @@ class DesktopTests(unittest.TestCase):
         write(folder / 'result.json', {'selected_epoch': 1, 'metrics': metrics, 'training_mode': 'synthetic fixture', 'benchmark_note': 'not research', 'base_eval_seen': 0, 'base_provenance': 'fixture', 'checks': {}})
         raw = b'{"fixture":true}\n'; (folder / 'predictions.jsonl').write_bytes(raw)
         self.window.refresh(); self.window.load_result()
+        self.assertEqual([self.window.metrics.item(i, 0).text() for i in range(3)], ['학습', '검증', '평가(테스트)'])
         self.assertEqual(self.window.metrics.item(2, 3).text(), '40.00%')
         self.assertIn('평가 감성어 일치율(F1@5): 40.00%',self.window.evaluation_summary.text())
         self.assertIn('평가 이미지 1장',self.window.evaluation_summary.text())
@@ -295,6 +296,32 @@ class DesktopTests(unittest.TestCase):
         with patch('desktop.QFileDialog.getSaveFileName', return_value=(str(destination), '')):
             self.window.export_predictions()
         self.assertEqual(destination.read_bytes(), raw)
+
+    def test_validation_terms_preserve_split_keys_and_historical_results(self):
+        import json
+        from core import LABELS
+        self.assertEqual([self.window.data_split.itemData(i) for i in range(3)], ['train', 'dev', 'eval'])
+        self.assertEqual(self.window.data_split.itemText(1), '검증용 (모델 선택)')
+        self.assertEqual(self.window.datasets.horizontalHeaderItem(3).text(), '검증')
+        folder = self.service.store.item('runs', 'old_labels'); folder.mkdir()
+        write(folder/'status.json', dict(id='old_labels', kind='train', status='complete', name='old'))
+        metrics = {s: dict(sample_count=2, correct_slots=8, possible_slots=10, f1_at_5=.8) for s in ('train', 'dev', 'eval')}
+        for selection in ('개발 자료 없음: 마지막 에폭 저장', '최고 dev F1@5, 동점이면 빠른 에폭'):
+            payload = dict(selected_epoch=3, selection=selection, metrics=metrics, training_mode='fixture',
+                           benchmark_note='fixture', base_eval_seen=0, base_provenance='fixture', checks={})
+            write(folder/'result.json', payload)
+            before = (folder/'result.json').read_bytes()
+            self.window.refresh(); self.window.load_result()
+            self.assertIn('검증', self.window.result_text.toPlainText())
+            self.assertNotIn('개발', self.window.result_text.toPlainText())
+            self.assertNotIn('dev F1', self.window.result_text.toPlainText())
+            self.assertEqual((folder/'result.json').read_bytes(), before)
+            self.assertEqual(self.window.metrics.item(1, 3).text(), '80.00%')
+        comparison = dict(status='matched', labels=LABELS[:5], hits=5,
+            result=dict(top5=[dict(label=x, score=.9) for x in LABELS[:5]]),
+            matches=[dict(dataset_name='표본', split='dev')])
+        self.window.show_inference_result(comparison)
+        self.assertIn('검증용', self.window.infer_status.text())
 
     def test_inference_does_not_send_gt(self):
         from PIL import Image

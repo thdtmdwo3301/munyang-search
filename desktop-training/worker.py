@@ -310,7 +310,7 @@ def execute(root,run_id):
             if engine.device.type=='cuda': torch.cuda.synchronize()
             loss_sum+=loss.item()*len(ix); step+=1
             eta=progress.timing(time.monotonic()-begin,total_steps-step)
-            progress.update('training',f'분류 헤드 학습 · {epoch}/{cfg["epochs"]} 에폭',40+50*step/total_steps,epoch=epoch,epochs=cfg['epochs'],step=step,total_steps=total_steps,eta_seconds=eta,eta_scope='남은 학습 배치만 추정. 개발 평가·최종 평가·저장은 별도.')
+            progress.update('training',f'분류 헤드 학습 · {epoch}/{cfg["epochs"]} 에폭',40+50*step/total_steps,epoch=epoch,epochs=cfg['epochs'],step=step,total_steps=total_steps,eta_seconds=eta,eta_scope='남은 학습 배치만 추정. 검증·최종 평가(테스트)·저장은 별도.')
         dev_metric,_=metric(engine.scores(dev) if len(dev) else [],dev_rows)
         history.append(dict(epoch=epoch,train_loss=loss_sum/len(train),dev_f1_at_5=dev_metric['f1_at_5']))
         if not len(dev) or dev_metric['f1_at_5']>best:
@@ -319,7 +319,7 @@ def execute(root,run_id):
         write(folder/'history.json',history)
     progress.update('evaluating','저장 가중치를 고정한 뒤 결과를 확인하는 중',92,eta_seconds=None)
     engine.head.load_state_dict(load_file(str(folder/'best_head.safetensors')))
-    selection='최고 dev F1@5, 동점이면 빠른 에폭' if len(dev) else '개발 자료 없음: 미리 지정한 마지막 에폭 저장. 성능 개선 판단 불가.'
+    selection='최고 검증 F1@5, 동점이면 빠른 에폭' if len(dev) else '검증 자료 없음: 미리 지정한 마지막 에폭 저장. 성능 개선 판단 불가.'
     write(folder/'frozen_before_evaluation.json',dict(selected_epoch=selected,head_sha256=sha(folder/'best_head.safetensors'),selection=selection,created=now()))
     scores=engine.scores(features); metrics={}; all_predictions=[]
     for split,ix in indexes.items():

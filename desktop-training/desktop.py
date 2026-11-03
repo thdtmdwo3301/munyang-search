@@ -167,13 +167,13 @@ class MainWindow(QMainWindow):
         self.data_label_count=label('선택한 정답: 0 / 5'); single.addWidget(self.data_label_count)
         self.data_labels.itemChanged.connect(self.update_data_label_count)
         self.data_split=QComboBox()
-        for title,key in [('학습용','train'),('개발용 (모델 선택)','dev'),('평가용','eval')]: self.data_split.addItem(title,key)
+        for title,key in [('학습용','train'),('검증용 (모델 선택)','dev'),('평가용 (테스트)','eval')]: self.data_split.addItem(title,key)
         form=QFormLayout(); form.addRow('데이터 용도',self.data_split); single.addLayout(form)
         box.addWidget(self.single_data_panel); self.single_data_panel.hide()
         self.zip_path.textChanged.connect(self.data_path_changed)
         row = QHBoxLayout(); row.addWidget(button('정답 목록 양식 저장', self.save_template)); row.addStretch()
         self.import_button = button('데이터 확인 및 등록', self.import_data, True); row.addWidget(self.import_button); box.addLayout(row)
-        box = self.group(layout, '등록된 데이터'); self.datasets = table(['이름', '전체', '학습', '개발', '평가']); box.addWidget(self.datasets)
+        box = self.group(layout, '등록된 데이터'); self.datasets = table(['이름', '전체', '학습', '검증', '평가(테스트)']); box.addWidget(self.datasets)
         self.datasets.itemSelectionChanged.connect(self.enable_dataset_actions)
         actions=QHBoxLayout();self.delete_data_button=button('선택 데이터 삭제',self.delete_dataset)
         self.trash_toggle=button('삭제 보관함 보기',self.toggle_dataset_trash)
@@ -198,7 +198,7 @@ class MainWindow(QMainWindow):
         self.train_model = QComboBox(); form.addRow('기준 가중치', self.train_model)
         form.addRow('학습 방식', label('기존 분류/융합부 이어서 학습 · 특징 추출부 고정'))
         self.train_device = self.device_combo(); form.addRow('실행 장치', self.train_device)
-        box.addWidget(label('개발 데이터가 있으면 최고 성능 에폭을 저장합니다. 없으면 지정한 마지막 에폭을 실행 확인용으로 저장하며 성능 개선으로 판단하지 않습니다. A/B 모델은 기존 두 분류 헤드만 학습하고 RBF는 유지합니다.', True))
+        box.addWidget(label('검증 데이터가 있으면 최고 성능 에폭을 저장합니다. 없으면 지정한 마지막 에폭을 실행 확인용으로 저장하며 성능 개선으로 판단하지 않습니다. A/B 모델은 기존 두 분류 헤드만 학습하고 RBF는 유지합니다.', True))
         box.addWidget(label('5종 BERT 융합 모델은 labels.csv의 description 설명문이 모든 이미지에 필요합니다. 이미지·텍스트 인코더와 앙상블 비율은 고정하고 기존 융합부를 학습합니다. 원기록 80%는 이미지+원설명문 조건이며 현재 데이터 성능을 보장하지 않습니다.',True))
         self.advanced_button = button('고급 설정 열기', self.toggle_advanced); box.addWidget(self.advanced_button)
         self.advanced_panel = QWidget(); advanced = QFormLayout(self.advanced_panel); box.addWidget(self.advanced_panel)
@@ -212,7 +212,7 @@ class MainWindow(QMainWindow):
         self.lr.setToolTip('학습률: 모델을 한 단계에서 얼마나 바꿀지 정하는 값입니다. 특별한 이유가 없다면 기본값을 유지하세요.')
         advanced.addRow(label('기본값: 최대 10회 · 8장씩 · 0.0001. 현재 프로그램의 시작값이며 기존 최고 성능을 재현한 최적값은 아닙니다. 고급 설정을 닫으면 기본값으로 돌아갑니다.', True))
         self.advanced_panel.hide()
-        self.plan_label = label('개발셋으로 에폭을 선택한 뒤 평가합니다. 기존 가중치는 덮어쓰지 않습니다.', True); box.addWidget(self.plan_label)
+        self.plan_label = label('검증셋으로 에폭을 선택한 뒤 평가(테스트)합니다. 기존 가중치는 덮어쓰지 않습니다.', True); box.addWidget(self.plan_label)
         row = QHBoxLayout(); self.plan_button = button('설정 확인', self.check_plan); row.addWidget(self.plan_button); row.addStretch()
         self.train_button = button('학습 시작', self.start_train, True); row.addWidget(self.train_button); box.addLayout(row)
         box = self.group(layout, '실행 현황'); self.job_choice = QComboBox(); self.job_choice.currentIndexChanged.connect(self.show_job); box.addWidget(self.job_choice)
@@ -498,8 +498,8 @@ class MainWindow(QMainWindow):
             self.epochs.setValue(TRAIN_DEFAULTS['epochs']); self.batch.setCurrentIndex(self.batch.findData(TRAIN_DEFAULTS['batch'])); self.lr.setValue(TRAIN_DEFAULTS['lr'])
 
     def show_plan(self, plan):
-        c = plan['counts']; selection='개발 데이터에서 가장 잘 나온 버전을 선택합니다.' if c['dev'] else '개발 데이터 없음: 마지막 에폭을 저장합니다. 최고 성능·개선 여부는 판단할 수 없습니다.'
-        self.plan_label.setText(f'학습 {c["train"]}장 / 개발 {c["dev"]}장 / 평가 {c["eval"]}장 · 최대 {plan["epochs"]}회 반복 학습\n{selection}\n기존 모델은 보존합니다. 적용은 학습 완료 후 직접 선택합니다.\n기준 모델 평가 이미지 학습 노출: 기록상 {plan["base_eval_seen"]}장')
+        c = plan['counts']; selection='검증 데이터에서 가장 잘 나온 버전을 선택합니다.' if c['dev'] else '검증 데이터 없음: 마지막 에폭을 저장합니다. 최고 성능·개선 여부는 판단할 수 없습니다.'
+        self.plan_label.setText(f'학습 {c["train"]}장 / 검증 {c["dev"]}장 / 평가(테스트) {c["eval"]}장 · 최대 {plan["epochs"]}회 반복 학습\n{selection}\n기존 모델은 보존합니다. 적용은 학습 완료 후 직접 선택합니다.\n기준 모델 평가 이미지 학습 노출: 기록상 {plan["base_eval_seen"]}장')
 
     def check_plan(self):
         payload = self.settings(); self.run_task(lambda: self.service.store.training_plan(payload), self.show_plan)
@@ -696,7 +696,7 @@ class MainWindow(QMainWindow):
                     for col in (1,2):
                         self.prediction.item(i,col).setBackground(QColor('#e3f3e9'))
                         self.prediction.item(i,col).setForeground(QColor('#185c37'))
-            sources=' / '.join(dict.fromkeys(m['dataset_name']+' · '+{'train':'학습용','dev':'개발용','eval':'평가용'}.get(m['split'],m['split']) for m in comparison['matches']))
+            sources=' / '.join(dict.fromkeys(m['dataset_name']+' · '+{'train':'학습용','dev':'검증용','eval':'평가용(테스트)'}.get(m['split'],m['split']) for m in comparison['matches']))
             self.infer_status.setText('등록 정답: '+' · '.join(labels)+'\n비교 자료: '+sources+'\n등록 라벨 기준의 비교입니다. AI 임시 라벨은 사람 검수 정답이 아닙니다. 학습에 사용한 이미지라면 독립 평가가 아닙니다.')
         elif comparison['status']=='conflict':
             self.infer_summary.setText('같은 이미지에 서로 다른 정답이 등록되어 있어 일치율을 계산하지 않았습니다.')
@@ -710,13 +710,15 @@ class MainWindow(QMainWindow):
             key = self.result_choice.currentData()
             if not key: raise ValueError('완료된 학습이 없습니다.')
             result = read(self.service.store.item('runs', key) / 'result.json'); rows = []
-            for split, name in [('train', '학습'), ('dev', '개발'), ('eval', '평가')]:
+            for split, name in [('train', '학습'), ('dev', '검증'), ('eval', '평가(테스트)')]:
                 m = result['metrics'][split]; rows.append([name, m['sample_count'], percent(m.get('baseline', {}).get('f1_at_5')), percent(m['f1_at_5']), f'{m["correct_slots"]} / {m["possible_slots"]}'])
             populate(self.metrics, rows); self.result_id = key; self.export_button.setEnabled(True)
             m=result['metrics']['eval'];baseline=m.get('baseline',{}).get('f1_at_5')
             delta='기존 모델과의 비교 없음' if baseline is None or m['f1_at_5'] is None else f'기존 모델 대비 {(m["f1_at_5"]-baseline)*100:+.2f}%p'
             self.evaluation_summary.setText(f'평가 감성어 일치율(F1@5): {percent(m["f1_at_5"])}\n평가 이미지 {m["sample_count"]}장 · {delta}' if m['sample_count'] else '학습 완료 · 별도 평가 데이터 없음\n성능 개선 여부는 판단할 수 없습니다.')
-            self.result_text.setPlainText(f'저장 에폭: {result["selected_epoch"]}\n{result.get("selection","개발 데이터 기준 선택")}\n{result["training_mode"]}\n{result["benchmark_note"]}\n기준 모델 평가 이미지 학습 노출: 기록상 {result["base_eval_seen"]}장\n{result["base_provenance"]}\n재현 검증: {json.dumps(result["checks"], ensure_ascii=False)}')
+            # Translate historical display text in memory; never rewrite saved results.
+            selection_text = result.get('selection', '검증 데이터 기준 선택').replace('개발', '검증').replace('dev F1@5', '검증 F1@5')
+            self.result_text.setPlainText(f'저장 에폭: {result["selected_epoch"]}\n{selection_text}\n{result["training_mode"]}\n{result["benchmark_note"]}\n기준 모델 평가 이미지 학습 노출: 기록상 {result["base_eval_seen"]}장\n{result["base_provenance"]}\n재현 검증: {json.dumps(result["checks"], ensure_ascii=False)}')
         except Exception as e: self.error(str(e))
 
     def export_predictions(self):

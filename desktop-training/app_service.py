@@ -95,7 +95,7 @@ class App:
                 deleted_models.append(item)
         return dict(datasets=self.store.list('datasets'), deleted_datasets=deleted, models=models, deleted_models=deleted_models, runs=self.store.list('runs'),
                     active=read(active) if active.exists() else None, labels=LABELS,
-                    dependencies=libs, storage=str(self.store.root), retention=self.model_retention(), version='0.14.0')
+                    dependencies=libs, storage=str(self.store.root), retention=self.model_retention(), version='0.14.1')
 
     def model_retention(self):
         path=local_only(self.store.root/'model_retention.json')
@@ -342,7 +342,7 @@ class App:
         if image_mode:
             if not labels or len(labels)!=5 or len(set(labels))!=5 or not set(labels)<=set(LABELS):
                 raise ValueError('이미지를 등록하려면 실제 정답 감성어를 서로 다르게 5개 선택하세요. 정답 없이 사용하려면 추론 화면을 이용하세요.')
-            if split not in ('train','dev','eval'): raise ValueError('학습·개발·평가 중 용도를 선택하세요.')
+            if split not in ('train','dev','eval'): raise ValueError('학습·검증·평가(테스트) 중 용도를 선택하세요.')
             rows=[dict(id=path.stem,image='images/'+path.name,labels=';'.join(labels),split=split,description='')]
             text=io.StringIO(newline=''); writer=csv.DictWriter(text,fieldnames=['id','image','labels','split','description'])
             writer.writeheader(); writer.writerows(rows); csv_bytes=text.getvalue().encode('utf-8-sig')
