@@ -827,7 +827,8 @@ class MainWindow(QMainWindow):
             self.evaluation_summary.setText(f'평가 감성어 일치율(F1@5): {percent(m["f1_at_5"])}\n평가 이미지 {m["sample_count"]}장 · {delta}' if m['sample_count'] else '학습 완료 · 별도 평가 데이터 없음\n성능 개선 여부는 판단할 수 없습니다.')
             # Translate historical display text in memory; never rewrite saved results.
             selection_text = result.get('selection', '검증 데이터 기준 선택').replace('개발', '검증').replace('dev F1@5', '검증 F1@5')
-            self.result_text.setPlainText(f'저장 에폭: {result["selected_epoch"]}\n{selection_text}\n{result["training_mode"]}\n{result["benchmark_note"]}\n기준 모델 평가 이미지 학습 노출: 기록상 {result["base_eval_seen"]}장\n{result["base_provenance"]}\n재현 검증: {json.dumps(result["checks"], ensure_ascii=False)}')
+            # Keep audit/provenance fields in saved results, not in the summary UI.
+            self.result_text.setPlainText(f'저장 에폭: {result["selected_epoch"]}\n{selection_text}\n{result["training_mode"]}')
         except Exception as e: self.error(str(e))
 
     def export_predictions(self):

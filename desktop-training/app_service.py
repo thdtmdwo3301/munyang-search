@@ -96,7 +96,7 @@ class App:
                 deleted_models.append(item)
         return dict(datasets=self.store.list('datasets'), deleted_datasets=deleted, models=models, deleted_models=deleted_models, runs=self.store.list('runs'),
                     active=read(active) if active.exists() else None, labels=LABELS,
-                    dependencies=libs, storage=str(self.store.root), retention=self.model_retention(), version='0.15.1')
+                    dependencies=libs, storage=str(self.store.root), retention=self.model_retention(), version='0.15.2')
 
     def model_retention(self):
         path=local_only(self.store.root/'model_retention.json')

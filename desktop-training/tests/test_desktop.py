@@ -297,6 +297,28 @@ class DesktopTests(unittest.TestCase):
             self.window.export_predictions()
         self.assertEqual(destination.read_bytes(), raw)
 
+    def test_result_summary_hides_audit_details_without_changing_records(self):
+        folder = self.service.store.item('runs', 'summary'); folder.mkdir()
+        write(folder/'status.json', dict(id='summary', kind='train', status='complete'))
+        metrics = {s: dict(sample_count=2, correct_slots=8, possible_slots=10,
+                          f1_at_5=.8, baseline=dict(f1_at_5=.8))
+                   for s in ('train', 'dev', 'eval')}
+        payload = dict(selected_epoch=3, selection='최고 검증 F1@5, 동점이면 빠른 에폭',
+                       metrics=metrics, training_mode='기존 분류 헤드 추가 학습',
+                       benchmark_note='사용자가 지정한 고정 분할. 반복 사용 벤치마크',
+                       base_eval_seen=1, base_provenance='원본 배포 기록 · 평가 이미지 학습 재사용',
+                       checks=dict(fresh_load_top5_equal=True, independent_metric=True,
+                                   GT_input_to_encoder=False))
+        write(folder/'result.json', payload)
+        before = (folder/'result.json').read_bytes()
+        self.window.refresh(); self.window.load_result()
+        self.assertEqual(self.window.result_text.toPlainText(),
+                         '저장 에폭: 3\n최고 검증 F1@5, 동점이면 빠른 에폭\n기존 분류 헤드 추가 학습')
+        self.assertEqual(self.window.evaluation_summary.text(),
+                         '평가 감성어 일치율(F1@5): 80.00%\n평가 이미지 2장 · 기존 모델 대비 +0.00%p')
+        self.assertEqual(self.window.metrics.item(2, 4).text(), '8 / 10')
+        self.assertEqual((folder/'result.json').read_bytes(), before)
+
     def test_validation_terms_preserve_split_keys_and_historical_results(self):
         import json
         from core import LABELS
