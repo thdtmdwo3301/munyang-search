@@ -269,6 +269,32 @@ def execute(root,run_id):
                     peak_allocated_bytes=torch.cuda.max_memory_allocated(engine.device) if cuda else 0,
                     elapsed_seconds=round(time.monotonic()-progress.started,3))
     if cfg.get('kind')=='infer':
+        if 'inputs' in cfg:
+            result = dict(kind='infer_batch', id=run_id, model_id=cfg['model_id'], GT_input=False,
+                          description_input=isinstance(engine, Bert5Engine), items=[
+                              dict(index=i['index'], file_name=i['file_name'], status='pending') for i in cfg['inputs']])
+            write(folder/'result.json', result)
+            for index, item in enumerate(cfg['inputs']):
+                progress.check()
+                progress.update('extracting', f'이미지 추론 {index+1} / {len(cfg["inputs"])} · {item["file_name"]}',
+                                100*index/len(cfg['inputs']), processed=index, total=len(cfg['inputs']))
+                try:
+                    path = local_only(folder/'inputs'/f'{index:04d}.image')
+                    if sha(path) != item['file_sha256']: raise ValueError('저장된 입력 이미지가 변경됐습니다.')
+                    with Image.open(path) as im:
+                        image = im.convert('RGB') if isinstance(engine, (LegacyImageEngine, Bert5Engine)) else ImageOps.exif_transpose(im).convert('RGB')
+                    features = engine.features([image], [item['description']]) if isinstance(engine, Bert5Engine) else engine.features([image])
+                    scores = engine.scores(features)[0]
+                    if len(scores) != 22 or not all(math.isfinite(x) for x in scores): raise ValueError('예측에 유효하지 않은 수치가 있습니다.')
+                    top = sorted(range(22), key=lambda j: (-scores[j], j))[:5]
+                    result['items'][index].update(status='complete', scores=scores, top5=[dict(label=LABELS[j], score=scores[j]) for j in top])
+                except Exception as e:
+                    result['items'][index].update(status='failed', error=str(e))
+                    result['runtime'] = runtime(); write(folder/'result.json', result)
+                    raise
+                result['runtime'] = runtime(); write(folder/'result.json', result)
+            progress.update('complete', f'{len(cfg["inputs"])}장 추론 완료', 100, processed=len(cfg['inputs']), total=len(cfg['inputs']), eta_seconds=0)
+            return
         progress.update('extracting','이미지 특징을 추출하는 중',40)
         with Image.open(folder/'input.image') as im:
             image=im.convert('RGB') if isinstance(engine,(LegacyImageEngine,Bert5Engine)) else ImageOps.exif_transpose(im).convert('RGB')

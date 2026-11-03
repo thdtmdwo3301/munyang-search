@@ -3,6 +3,7 @@ import importlib.util
 import csv
 import io
 import json
+import hashlib
 import os
 import shutil
 from pathlib import Path, PurePosixPath
@@ -95,7 +96,7 @@ class App:
                 deleted_models.append(item)
         return dict(datasets=self.store.list('datasets'), deleted_datasets=deleted, models=models, deleted_models=deleted_models, runs=self.store.list('runs'),
                     active=read(active) if active.exists() else None, labels=LABELS,
-                    dependencies=libs, storage=str(self.store.root), retention=self.model_retention(), version='0.14.1')
+                    dependencies=libs, storage=str(self.store.root), retention=self.model_retention(), version='0.15')
 
     def model_retention(self):
         path=local_only(self.store.root/'model_retention.json')
@@ -387,14 +388,58 @@ class App:
                 if blob.tell()>256*1024**2: raise ValueError('등록 데이터 압축 크기가 256MB를 넘습니다. 나누어 등록하세요.')
         return self.store.import_zip(blob.getvalue(),name)
 
-    def inference_comparison(self, run_id):
+    @staticmethod
+    def _inference_bytes(path):
+        path = local_only(path)
+        with path.open('rb') as source: raw = source.read(16 * 1024**2 + 1)
+        if len(raw) > 16 * 1024**2: raise ValueError('추론 이미지는 16MB 이하로 선택하세요: ' + path.name)
+        return raw
+
+    @staticmethod
+    def inference_paths(paths=None, folder=None):
+        """Bounded, local selection; folder mode never follows subfolders/links."""
+        if folder is not None:
+            directory = local_only(folder)
+            if not directory.is_dir(): raise ValueError('이미지 폴더를 선택하세요.')
+            paths = []
+            for entry in directory.iterdir():
+                if entry.suffix.lower() not in {'.jpg', '.jpeg', '.png', '.webp'} or entry.is_symlink(): continue
+                entry = local_only(entry)
+                if entry.is_file(): paths.append(str(entry))
+                if len(paths) > 1000: raise ValueError('한 번에 최대 1,000장을 선택하세요.')
+            paths.sort(key=lambda x: (Path(x).name.casefold(), Path(x).name))
+        if not isinstance(paths, (list, tuple)) or not 1 <= len(paths) <= 1000:
+            raise ValueError('이미지 1~1,000장을 선택하세요. 폴더는 바로 아래 이미지만 읽습니다.')
+        selected = []; seen = set(); total = 0
+        for value in paths:
+            path = local_only(value)
+            if path.suffix.lower() not in {'.jpg', '.jpeg', '.png', '.webp'} or not path.is_file():
+                raise ValueError('지원하는 이미지 파일을 선택하세요: ' + path.name)
+            key = os.path.normcase(str(path))
+            if key in seen: continue
+            seen.add(key); size = path.stat().st_size; total += size
+            if size > 16 * 1024**2: raise ValueError('개별 추론 이미지는 16MB 이하로 선택하세요: ' + path.name)
+            if total > 512 * 1024**2: raise ValueError('선택한 이미지 합계는 512MB 이하로 나누어 실행하세요.')
+            selected.append(str(path))
+        return selected
+
+    def inference_comparison(self, run_id, index=None):
         """Read-only AFTER inference: match input pixels, never feed GT to worker."""
         folder=self.store.item('runs',run_id)
-        if read(folder/'status.json').get('status')!='complete':
+        if read(folder/'status.json').get('status') not in ('complete', 'cancelled', 'failed', 'interrupted'):
             raise ValueError('추론 완료 후 정답과 비교할 수 있습니다.')
         result=read(folder/'result.json')
-        if result.get('kind')!='infer': raise ValueError('이미지 추론 결과가 아닙니다.')
-        digest,_=pixel_hash((folder/'input.image').read_bytes())
+        if result.get('kind') == 'infer_batch':
+            if type(index) is not int or not 0 <= index < len(result['items']):
+                raise ValueError('이미지 순서를 확인하세요.')
+            item = result['items'][index]
+            if item.get('status') != 'complete': raise ValueError('이 이미지의 추론은 완료되지 않았습니다.')
+            input_path = folder / 'inputs' / f'{index:04d}.image'
+            result = dict(item, model_id=result['model_id'], GT_input=False)
+        elif result.get('kind') == 'infer':
+            input_path = folder/'input.image'
+        else: raise ValueError('이미지 추론 결과가 아닙니다.')
+        digest,_=pixel_hash(input_path.read_bytes())
         matches=[]
         for dataset in self.store.list('datasets'):
             manifest=read(self.store.item('datasets',dataset['id'])/'manifest.json')
@@ -423,26 +468,45 @@ class App:
                 model = read(self.store.item('models', payload.get('model_id')) / 'manifest.json')
                 if not model.get('has_head'):
                     raise ValueError('학습된 분류 헤드가 없는 모델입니다.')
-                description=payload.get('description','')
-                if model.get('engine')=='bert5_fusion_v1' and (not isinstance(description,str) or not description.strip() or len(description)>20000):
-                    raise ValueError('5종 BERT 추론에는 설명문(1~20,000자)이 필요합니다. 이미지 전용 모델과 입력 조건이 다릅니다.')
-                path = local_only(payload['image_path'])
-                if path.stat().st_size > 16 * 1024**2:
-                    raise ValueError('추론 이미지는 16MB 이하로 선택하세요.')
-                raw = path.read_bytes(); pixel_hash(raw)
-                plan = dict(id=uid('infer'), kind='infer', model_id=model['id'],
-                            device=payload.get('device', 'cpu'), created=now())
-                if model.get('engine')=='bert5_fusion_v1':plan['description']=description.strip()
-                if plan['device'] not in ('cpu', 'cuda:0'):
-                    raise ValueError('지원하지 않는 장치입니다.')
+                if 'images' in payload:
+                    inputs = payload['images']
+                    if not isinstance(inputs, list) or not 1 <= len(inputs) <= 1000 or not all(isinstance(i, dict) for i in inputs):
+                        raise ValueError('이미지 1~1,000장을 선택하세요.')
+                    paths = self.inference_paths([i.get('image_path', '') for i in inputs])
+                    if len(paths) != len(inputs): raise ValueError('같은 파일이 중복 선택됐습니다.')
+                    staged_inputs = []; actual_bytes = 0
+                    for index, (item, path) in enumerate(zip(inputs, paths)):
+                        description = item.get('description', '')
+                        if model.get('engine') == 'bert5_fusion_v1' and (not isinstance(description, str) or not description.strip() or len(description) > 20000):
+                            raise ValueError(f'{index+1}번째 이미지 {Path(path).name}: 설명문(1~20,000자)을 입력하세요.')
+                        raw = self._inference_bytes(path); pixel_hash(raw); actual_bytes += len(raw)
+                        if actual_bytes > 512 * 1024**2: raise ValueError('선택한 이미지 합계는 512MB 이하로 나누어 실행하세요.')
+                        record = dict(index=index, file_name=Path(path).name, file_sha256=hashlib.sha256(raw).hexdigest())
+                        if model.get('engine') == 'bert5_fusion_v1': record['description'] = description.strip()
+                        staged_inputs.append(record)
+                    plan = dict(id=uid('infer'), kind='infer', model_id=model['id'], device=payload.get('device', 'cpu'), created=now(), inputs=staged_inputs)
+                    if plan['device'] not in ('cpu', 'cuda:0'): raise ValueError('지원하지 않는 장치입니다.')
+                else:
+                    plan, raw = self._single_inference_plan(model, payload)
             else:
                 raise ValueError('지원하지 않는 실행 종류입니다.')
             p = self.store.item('runs', plan['id']); p.mkdir()
-            if kind == 'infer':
-                (p / 'input.image').write_bytes(raw)
             write(p / 'config.json', plan)
             write(p / 'status.json', dict(id=plan['id'], kind=kind, name=plan.get('name', '이미지 추론'),
                   status='queued', created=now(), progress=0, message='작업 준비 중'))
+            try:
+                if kind == 'infer' and 'inputs' in plan:
+                    (p/'inputs').mkdir()
+                    for record, path in zip(plan['inputs'], paths):
+                        raw = self._inference_bytes(path)
+                        if hashlib.sha256(raw).hexdigest() != record['file_sha256']:
+                            raise ValueError('선택 이후 이미지가 변경됐습니다: ' + record['file_name'])
+                        (p/'inputs'/f'{record["index"]:04d}.image').write_bytes(raw)
+                elif kind == 'infer':
+                    (p / 'input.image').write_bytes(raw)
+            except Exception as e:
+                status = read(p/'status.json'); status.update(status='failed', message=str(e))
+                write(p/'status.json', status); raise
             env = os.environ.copy()
             env.update(HF_HOME=str(self.store.root / 'cache/huggingface'), HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1',
                        TORCH_HOME=str(self.store.root / 'cache/torch'), TMPDIR=str(self.store.root / 'cache'),
@@ -466,6 +530,21 @@ class App:
                     write(p / 'status.json', status)
             threading.Thread(target=watch, daemon=True).start()
             return {'id': plan['id']}
+
+    def _single_inference_plan(self, model, payload):
+        description=payload.get('description','')
+        if model.get('engine')=='bert5_fusion_v1' and (not isinstance(description,str) or not description.strip() or len(description)>20000):
+            raise ValueError('5종 BERT 추론에는 설명문(1~20,000자)이 필요합니다. 이미지 전용 모델과 입력 조건이 다릅니다.')
+        path = local_only(payload['image_path'])
+        if path.stat().st_size > 16 * 1024**2:
+            raise ValueError('추론 이미지는 16MB 이하로 선택하세요.')
+        raw = self._inference_bytes(path); pixel_hash(raw)
+        plan = dict(id=uid('infer'), kind='infer', model_id=model['id'],
+                    device=payload.get('device', 'cpu'), created=now())
+        if model.get('engine')=='bert5_fusion_v1':plan['description']=description.strip()
+        if plan['device'] not in ('cpu', 'cuda:0'):
+            raise ValueError('지원하지 않는 장치입니다.')
+        return plan, raw
 
     def cancel(self, key):
         p = self.store.item('runs', key)

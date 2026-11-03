@@ -40,6 +40,19 @@ class Bert5Tests(unittest.TestCase):
             logits=engine.training_logits(features)
             expected=sum(s['ensemble_weight']*l.sigmoid() for s,l in zip(models,logits))
             torch.testing.assert_close(torch.tensor(engine.scores(features)),expected)
+            # Separate descriptions stay paired with their images in the real worker.
+            app = App(store.root); paths = []
+            expected_batch = []
+            for index, description in enumerate(('a', 'b c')):
+                image = Image.new('RGB', (32, 32), (index*150, 40, 20))
+                path = Path(tmp)/f'input_{index}.png'; image.save(path)
+                paths.append(dict(image_path=str(path), description=description))
+                expected_batch.append(engine.scores(engine.features([image], [description]))[0])
+            run_info = app.launch('infer', dict(model_id='bert5', device='cpu', images=paths))
+            self.assertEqual(app.process.wait(timeout=90), 0)
+            batch_result = read(store.item('runs', run_info['id'])/'result.json')
+            self.assertTrue(batch_result['description_input']); self.assertFalse(batch_result['GT_input'])
+            torch.testing.assert_close(torch.tensor([i['scores'] for i in batch_result['items']]), torch.tensor(expected_batch), rtol=0, atol=0)
             data=store.import_zip(archive(),'test')
             plan=store.training_plan(dict(dataset_ids=[data['id']],model_id='bert5',epochs=2,batch=8,lr=.001))
             run=store.item('runs',plan['id']);run.mkdir();write(run/'config.json',plan);write(run/'status.json',dict(id=plan['id'],status='queued'))

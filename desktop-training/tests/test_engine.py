@@ -77,6 +77,17 @@ class EngineTests(unittest.TestCase):
             self.assertFalse(output['GT_input']); self.assertFalse(output['description_input'])
             self.assertEqual(len(output['top5']),5)
             torch.testing.assert_close(torch.tensor(output['scores']),expected[0],rtol=1e-5,atol=1e-6)
+            # The desktop multi-image path uses the same equations, one image at a time.
+            image2 = Image.new('RGB', (240, 280), (200, 60, 10))
+            image_path2 = Path(tmp)/'input2.png'; image2.save(image_path2)
+            expected2 = engine.scores(engine.features([image2]))[0]
+            run2 = app.launch('infer', dict(model_id=imported['id'], device='cpu', images=[
+                dict(image_path=str(image_path)), dict(image_path=str(image_path2))]))
+            self.assertEqual(app.process.wait(timeout=90), 0)
+            batch_result = read(store.item('runs', run2['id'])/'result.json')
+            self.assertEqual(len(batch_result['items']), 2)
+            torch.testing.assert_close(torch.tensor(batch_result['items'][0]['scores']), torch.tensor(output['scores']), rtol=0, atol=0)
+            torch.testing.assert_close(torch.tensor(batch_result['items'][1]['scores']), torch.tensor(expected2), rtol=1e-5, atol=1e-6)
             # Real optimizer steps on existing A/B heads; source weights immutable.
             from worker import execute
             from core import sha

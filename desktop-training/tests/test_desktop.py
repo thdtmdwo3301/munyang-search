@@ -334,6 +334,74 @@ class DesktopTests(unittest.TestCase):
             self.assertEqual(kind, 'infer')
             self.assertEqual(set(payload), {'image_path', 'model_id', 'device'})
 
+    def test_batch_picker_navigation_descriptions_and_result_pairing(self):
+        from PIL import Image
+        from core import LABELS
+        paths = []
+        for i in range(3):
+            path = Path(self.tmp.name)/f'문양_{i}.png'; Image.new('RGB', (20, 20), (i*80, 20, 10)).save(path); paths.append(str(path))
+        with patch('desktop.QFileDialog.getOpenFileNames', return_value=(paths, '')):
+            self.window.infer_files_button.click()
+        self.assertIn('1 / 3', self.window.infer_position.text())
+        self.assertFalse(self.window.infer_previous.isEnabled())
+        self.window.infer_description.setPlainText('첫 설명')
+        self.window.infer_next.click(); self.assertEqual(self.window.infer_description.toPlainText(), '')
+        self.window.infer_description.setPlainText('두 번째 설명')
+        self.window.infer_previous.click(); self.assertEqual(self.window.infer_description.toPlainText(), '첫 설명')
+        self.window.infer_model.addItem('fixture', 'fixture')
+        with patch.object(self.service, 'launch', return_value={'id': 'fixture'}) as launch:
+            self.window.start_infer(); self.wait_task()
+            payload = launch.call_args[0][1]
+            self.assertEqual(payload['images'], [dict(image_path=p) for p in paths])
+        self.assertFalse(self.window.infer_files_button.isEnabled())
+        self.assertTrue(self.window.infer_next.isEnabled())
+        self.window.infer_id = None
+        folder = self.service.store.item('runs', 'fixture'); (folder/'inputs').mkdir(parents=True)
+        items = []
+        for i, path in enumerate(paths):
+            (folder/'inputs'/f'{i:04d}.image').write_bytes(Path(path).read_bytes())
+            items.append(dict(index=i, file_name=Path(path).name, status='complete', top5=[dict(label=n, score=.9) for n in LABELS[i:i+5]]))
+        write(folder/'status.json', dict(id='fixture', kind='infer', status='complete'))
+        result = dict(kind='infer_batch', items=items, model_id='fixture')
+        write(folder/'result.json', result)
+        self.window.infer_output = result; self.window.infer_completed_id = 'fixture'
+        self.window.show_current_inference()
+        self.assertEqual(self.window.prediction.item(0, 1).text(), LABELS[0])
+        self.window.infer_next.click(); self.assertEqual(self.window.prediction.item(0, 1).text(), LABELS[1])
+        self.window.infer_next.click(); self.assertEqual(self.window.prediction.item(0, 1).text(), LABELS[2])
+        self.assertFalse(self.window.infer_next.isEnabled())
+        if os.environ.get('PATTERN_UI_CAPTURE') == '1':
+            self.window.nav.setCurrentRow(3); self.qt.processEvents()
+            self.window.stack.widget(3).ensureWidgetVisible(self.window.prediction, 0, 35); self.qt.processEvents()
+            self.window.grab().save(str(Path(__file__).absolute().parent.parent/'test-output'/'batch-inference.png'))
+        self.window.set_inference_images(paths[:1]); self.assertIsNone(self.window.infer_output)
+        self.assertEqual(self.window.prediction.rowCount(), 0)
+
+    def test_batch_bert_descriptions_bound_to_each_image(self):
+        from PIL import Image
+        paths = []
+        for i in range(2):
+            path = Path(self.tmp.name)/f'bert_{i}.png'; Image.new('RGB', (20, 20)).save(path); paths.append(str(path))
+        self.window.set_inference_images(paths)
+        self.window.infer_model.addItem('text', 'text')
+        self.window.state['models'] = [dict(id='text', engine='bert5_fusion_v1')]
+        self.window.infer_description.setPlainText('곡선과 잎')
+        self.window.infer_next.click(); self.window.infer_description.setPlainText('반복된 격자')
+        with patch.object(self.service, 'launch', return_value={'id': 'fixture'}) as launch:
+            self.window.start_infer(); self.wait_task()
+        payload = launch.call_args[0][1]
+        self.assertEqual([i['description'] for i in payload['images']], ['곡선과 잎', '반복된 격자'])
+
+    def test_inference_completion_race_restores_controls(self):
+        with patch.object(self.service, 'is_running', return_value=True):
+            self.window.enable_actions()
+        self.assertTrue(self.window.actions_waiting)
+        self.assertFalse(self.window.infer_files_button.isEnabled())
+        self.assertFalse(self.window.activate_button.isEnabled())
+        with patch.object(self.service, 'is_running', return_value=False): self.window.poll()
+        self.assertFalse(self.window.actions_waiting)
+        self.assertTrue(self.window.infer_files_button.isEnabled())
+
     def test_plain_language_prediction_summary(self):
         from core import LABELS
         top=LABELS[:3]+LABELS[5:7]

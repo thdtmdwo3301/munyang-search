@@ -97,6 +97,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.service = service; self.state = {}; self.task = None; self.callback = None
         self.infer_id = None; self.result_id = None; self.active_id = None; self.pending_close = False
+        self.infer_images = []; self.infer_index = 0; self.infer_output = None
+        self.infer_completed_id = None; self.infer_comparisons = {}; self.input_model_id = None
         self.model_check = None; self.advanced_enabled = False
         self.setWindowTitle('문양검색 · 학습 관리')
         self.resize(1180, 850); self.setMinimumSize(900, 680)
@@ -234,19 +236,38 @@ class MainWindow(QMainWindow):
         layout = self.page('문양 추론', '이미지 전용 모델은 이미지만, 5종 BERT 융합 모델은 이미지와 설명문을 사용합니다. 정답은 입력하지 않습니다.')
         box = self.group(layout, '입력과 모델'); form = QFormLayout(); self.infer_model = QComboBox(); self.infer_device = self.device_combo()
         form.addRow('추론 모델', self.infer_model); form.addRow('실행 장치', self.infer_device); box.addLayout(form)
-        self.image_path = self.file_row(box, '문양 이미지 · 최대 16MB', '이미지 (*.png *.jpg *.jpeg *.webp)')
-        self.image_path.textChanged.connect(self.preview_image)
+        self.image_path = QLineEdit(); self.image_path.setReadOnly(True); self.image_path.setPlaceholderText('문양 이미지 · 여러 장 선택 가능')
+        box.addWidget(self.image_path)
+        self.image_path.textChanged.connect(self.single_inference_path_changed)
+        pickers = QHBoxLayout()
+        self.infer_files_button = button('이미지 선택 (여러 장 가능)', self.pick_inference_files)
+        self.infer_folder_button = button('이미지 폴더 선택', self.pick_inference_folder)
+        pickers.addWidget(self.infer_files_button); pickers.addWidget(self.infer_folder_button); box.addLayout(pickers)
+        box.addWidget(label('폴더 바로 아래의 JPG·PNG·WebP를 파일명 순으로 읽습니다. 하위 폴더는 제외합니다.\n최대 1,000장 · 한 장 16MB · 합계 512MB. 한 장씩 순차 처리하므로 CPU에서도 사용할 수 있습니다.', True))
+        navigation = QHBoxLayout()
+        self.infer_previous = button('◀ 이전', lambda: self.move_inference(-1))
+        self.infer_position = label('0 / 0'); self.infer_position.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.infer_next = button('다음 ▶', lambda: self.move_inference(1))
+        navigation.addWidget(self.infer_previous); navigation.addWidget(self.infer_position, 1); navigation.addWidget(self.infer_next)
+        self.infer_previous.setEnabled(False); self.infer_next.setEnabled(False)
         self.description_panel=QGroupBox('5종 BERT 모델용 설명문');description_layout=QVBoxLayout(self.description_panel)
         self.infer_description=QPlainTextEdit();self.infer_description.setMaximumHeight(100)
         self.infer_description.setPlaceholderText('이미지의 원설명문을 입력하세요. 감성어 정답 5개를 대신 넣지 마세요.')
+        self.infer_description.textChanged.connect(self.inference_description_changed)
         description_layout.addWidget(self.infer_description)
         description_layout.addWidget(label('이 모델의 원기록 F1@5 80%는 이미지+원설명문 조건입니다. 설명문 자동 생성 기능이 아닙니다.',True))
+        description_layout.addWidget(label('현재 표시된 이미지의 설명문만 입력합니다. 이전·다음으로 이동해 각 이미지의 설명문을 입력한 뒤 전체 추론을 실행하세요.', True))
         box.addWidget(self.description_panel);self.description_panel.hide()
         self.infer_model.currentIndexChanged.connect(self.update_input_mode)
-        self.preview = label('이미지를 선택해 주세요.'); self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter); self.preview.setMinimumHeight(180); box.addWidget(self.preview)
-        self.infer_button = button('추론 실행', self.start_infer, True); box.addWidget(self.infer_button)
+        self.preview = label('이미지를 선택해 주세요.'); self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter); self.preview.setMinimumHeight(180)
+        actions = QHBoxLayout()
+        self.infer_button = button('추론 실행', self.start_infer, True); actions.addWidget(self.infer_button)
+        self.infer_cancel = button('추론 중단', self.cancel_inference); self.infer_cancel.setEnabled(False); actions.addWidget(self.infer_cancel); box.addLayout(actions)
+        self.infer_progress = label(''); box.addWidget(self.infer_progress)
+        layout.addLayout(navigation)
         self.infer_summary=label('이미지를 선택하고 추론을 실행해 주세요.');layout.addWidget(self.infer_summary)
-        self.prediction = table(['순위', '예측 감성어', '등록 정답과 비교', '상세 점수']);self.prediction.setColumnHidden(3,True);layout.addWidget(self.prediction)
+        results = QHBoxLayout(); results.addWidget(self.preview, 1)
+        self.prediction = table(['순위', '예측 감성어', '등록 정답과 비교', '상세 점수']);self.prediction.setColumnHidden(3,True); results.addWidget(self.prediction, 2); layout.addLayout(results)
         self.score_details_button=button('상세 점수 보기',self.toggle_score_details);layout.addWidget(self.score_details_button)
         self.score_note=label('상세 점수는 예측 순위를 정하는 값이며 확률·정확도가 아닙니다. 1을 넘을 수도 있습니다.',True);layout.addWidget(self.score_note);self.score_note.hide()
         self.infer_status = label('정답은 추론 완료 후 비교에만 사용하며 모델 입력에는 전달하지 않습니다.', True); layout.addWidget(self.infer_status); layout.addStretch()
@@ -356,21 +377,32 @@ class MainWindow(QMainWindow):
             if self.infer_id:
                 status = next((r for r in runs if r['id'] == self.infer_id), None)
                 if status:
-                    self.infer_status.setText(status.get('message', ''))
-                    if status['status'] == 'complete':
-                        self.show_inference_result(self.service.inference_comparison(self.infer_id)); self.infer_id = None
-                    elif status['status'] not in RUNNING: self.infer_id = None
+                    self.infer_progress.setText(status.get('message', ''))
+                    if status['status'] not in RUNNING:
+                        finished_id = self.infer_id; self.infer_id = None
+                        path = self.service.store.item('runs', finished_id)/'result.json'
+                        if path.is_file():
+                            self.infer_output = read(path); self.infer_completed_id = finished_id
+                            self.infer_comparisons = {}; self.show_current_inference()
+                            self.stack.widget(3).ensureWidgetVisible(self.prediction, 0, 35)
+                        else: self.infer_summary.setText('추론 결과가 없습니다. 위의 작업 상태를 확인하세요.')
+                        self.enable_actions()
         except Exception as e: self.error(str(e))
 
     def enable_actions(self):
         idle = self.task is None; ready = all(self.state.get('dependencies', {}).values())
         running = self.service.is_running()
+        self.actions_waiting = running
         for b in (self.import_button, self.plan_button, self.activate_button, self.advanced_button,
                   self.data_file_button,self.data_folder_button,self.single_data_panel,self.data_name): b.setEnabled(idle)
         for b in (self.folder_button,self.inspect_button,self.load_archive_button): b.setEnabled(idle and not running)
         self.register_button.setEnabled(idle and not running and bool(self.model_check and not self.model_check['missing']))
         self.train_button.setEnabled(idle and ready and not running and self.train_model.count() > 0 and self.dataset_choices.count() > 0)
         self.infer_button.setEnabled(idle and ready and not running and self.infer_model.count() > 0)
+        self.activate_button.setEnabled(idle and not running and not self.infer_id)
+        for widget in (self.infer_files_button, self.infer_folder_button, self.infer_model, self.infer_device, self.infer_description):
+            widget.setEnabled(idle and not running and not self.infer_id)
+        self.infer_cancel.setEnabled(idle and running and bool(self.infer_id))
         self.enable_dataset_actions()
         self.enable_model_actions()
 
@@ -651,10 +683,81 @@ class MainWindow(QMainWindow):
                 self.message.setText('양식 저장 완료. 예시 정답을 실제 GT로 교체해 주세요.')
             except Exception as e: self.error(str(e))
 
-    def preview_image(self, path):
+    def reset_inference_results(self):
+        self.infer_output = None; self.infer_completed_id = None; self.infer_comparisons = {}
         self.prediction.setRowCount(0);self.infer_summary.setText('선택한 이미지로 추론을 실행해 주세요.')
         self.infer_status.setText('정답은 추론 완료 후 비교에만 사용합니다.')
-        self.infer_id=None
+        self.infer_progress.setText('')
+
+    def single_inference_path_changed(self, path):
+        if path: self.set_inference_images([path])
+
+    def set_inference_images(self, paths):
+        if self.infer_id: return
+        try:
+            paths = self.service.inference_paths(paths)
+            self.infer_images = [dict(image_path=path, description='') for path in paths]
+            self.infer_index = 0; self.reset_inference_results(); self.show_current_inference()
+            self.infer_button.setText(f'전체 {len(paths)}장 추론 실행' if len(paths)>1 else '추론 실행')
+        except Exception as e: self.error(str(e))
+
+    def pick_inference_files(self):
+        paths, _ = QFileDialog.getOpenFileNames(self, '추론할 이미지 선택', str(self.service.store.root),
+            '이미지 (*.png *.jpg *.jpeg *.webp *.PNG *.JPG *.JPEG *.WEBP)', options=QFileDialog.Option.DontUseNativeDialog)
+        if paths: self.set_inference_images(paths)
+
+    def pick_inference_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, '이미지 폴더 선택 (하위 폴더 제외)', str(self.service.store.root),
+            options=QFileDialog.Option.DontUseNativeDialog)
+        if folder:
+            try: self.set_inference_images(self.service.inference_paths(folder=folder))
+            except Exception as e: self.error(str(e))
+
+    def move_inference(self, delta):
+        index = self.infer_index + delta
+        if 0 <= index < len(self.infer_images):
+            self.infer_index = index; self.show_current_inference()
+
+    def inference_description_changed(self):
+        if self.infer_images and not self.infer_id:
+            self.infer_images[self.infer_index]['description'] = self.infer_description.toPlainText()
+            self.reset_inference_results()
+
+    def show_current_inference(self):
+        if not self.infer_images: return
+        item = self.infer_images[self.infer_index]
+        self.image_path.blockSignals(True); self.image_path.setText(item['image_path']); self.image_path.blockSignals(False)
+        self.infer_description.blockSignals(True); self.infer_description.setPlainText(item['description']); self.infer_description.blockSignals(False)
+        self.infer_position.setText(f'{self.infer_index+1} / {len(self.infer_images)} · {Path(item["image_path"]).name}')
+        self.infer_previous.setEnabled(self.infer_index > 0); self.infer_next.setEnabled(self.infer_index+1 < len(self.infer_images))
+        path = item['image_path']
+        if self.infer_completed_id:
+            folder = self.service.store.item('runs', self.infer_completed_id)
+            path = folder/'inputs'/f'{self.infer_index:04d}.image' if self.infer_output.get('kind') == 'infer_batch' else folder/'input.image'
+        self.preview_image(path)
+        self.prediction.setRowCount(0)
+        self.infer_status.setText('정답은 추론 완료 후 비교에만 사용합니다.')
+        if not self.infer_output:
+            self.infer_summary.setText('추론 진행 중입니다.' if self.infer_id else '선택한 이미지로 추론을 실행해 주세요.'); return
+        batch = self.infer_output.get('kind') == 'infer_batch'
+        output = self.infer_output['items'][self.infer_index] if batch else self.infer_output
+        if batch and output['status'] != 'complete':
+            self.infer_summary.setText('이 이미지의 추론 중 오류가 발생했습니다.' if output['status']=='failed' else '이 이미지는 아직 추론되지 않았습니다.')
+            self.infer_status.setText(output.get('error', '완료된 다른 이미지는 이전·다음으로 확인할 수 있습니다.')); return
+        try:
+            if self.infer_index not in self.infer_comparisons:
+                self.infer_comparisons[self.infer_index] = self.service.inference_comparison(self.infer_completed_id, self.infer_index if batch else None)
+            self.show_inference_result(self.infer_comparisons[self.infer_index])
+        except Exception as e: self.error(str(e))
+
+    def cancel_inference(self):
+        if self.infer_id:
+            try:
+                self.service.cancel(self.infer_id)
+                self.infer_progress.setText('현재 이미지 처리가 끝나면 중단합니다. 완료된 이미지 결과는 보존합니다.')
+            except Exception as e: self.error(str(e))
+
+    def preview_image(self, path):
         try:
             from PIL import Image, ImageOps
             path = local_only(path)
@@ -671,14 +774,20 @@ class MainWindow(QMainWindow):
         model=next((m for m in self.state.get('models',[]) if m['id']==payload['model_id']),{})
         if model.get('engine')=='bert5_fusion_v1':payload['description']=self.infer_description.toPlainText()
         if not payload['image_path']: self.error('이미지를 선택해 주세요.'); return
+        if len(self.infer_images) > 1:
+            payload.pop('image_path'); payload.pop('description', None)
+            payload['images'] = [dict(image_path=i['image_path'], **({'description':i['description']} if model.get('engine')=='bert5_fusion_v1' else {})) for i in self.infer_images]
         def started(result):
-            self.infer_id = result['id']; self.prediction.setRowCount(0); self.infer_summary.setText('예측 중입니다…');self.infer_status.setText('모델을 불러오는 중…'); self.message.setText('추론을 시작했습니다.')
+            self.reset_inference_results(); self.infer_id = result['id']; self.infer_summary.setText('예측 중입니다…');self.infer_progress.setText('모델을 불러오는 중…'); self.message.setText('추론을 시작했습니다.')
         self.run_task(lambda: self.service.launch('infer', payload), started)
 
     def update_input_mode(self):
         if not hasattr(self,'description_panel'):return
         model=next((m for m in self.state.get('models',[]) if m['id']==self.infer_model.currentData()),{})
         self.description_panel.setVisible(model.get('engine')=='bert5_fusion_v1')
+        if self.input_model_id != self.infer_model.currentData():
+            self.input_model_id = self.infer_model.currentData()
+            if not self.infer_id: self.reset_inference_results()
 
     def toggle_score_details(self):
         show=self.prediction.isColumnHidden(3)
@@ -731,7 +840,7 @@ class MainWindow(QMainWindow):
             except Exception as e: self.error(str(e))
 
     def poll(self):
-        if self.service.is_running() or self.infer_id or self.pending_close or any(r['status'] in RUNNING for r in self.state.get('runs', [])):
+        if self.service.is_running() or self.infer_id or self.pending_close or getattr(self, 'actions_waiting', False) or any(r['status'] in RUNNING for r in self.state.get('runs', [])):
             self.refresh()
         if self.pending_close and not self.service.is_running() and self.task is None: self.close()
 
