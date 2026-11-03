@@ -107,6 +107,8 @@ class EngineTests(unittest.TestCase):
             self.assertEqual(second['selected_epoch'],2);self.assertIsNone(second['metrics']['eval']['f1_at_5'])
             manifest=read(store.item('models',second['model_id'])/'manifest.json')
             self.assertEqual(manifest['parent_model'],trained['model_id']);self.assertEqual(manifest['base_model'],'legacy')
+            from tests.test_model_archive import assert_real_roundtrip
+            assert_real_roundtrip(self, store, second['model_id'], image)
 
     def test_local_end_to_end(self):
         import torch
@@ -124,5 +126,8 @@ class EngineTests(unittest.TestCase):
             execute(store.root,plan['id']);r=read(folder/'result.json')
             self.assertTrue(r['checks']['fresh_load_top5_equal']);self.assertEqual(r['metrics']['eval']['sample_count'],1)
             self.assertTrue((store.item('models',r['model_id'])/'head.safetensors').exists())
+            from tests.test_model_archive import assert_real_roundtrip
+            from PIL import Image
+            assert_real_roundtrip(self, store, r['model_id'], Image.new('RGB', (32, 32), (20, 50, 80)))
 
 if __name__=='__main__': unittest.main()

@@ -32,6 +32,8 @@ class Bert5Tests(unittest.TestCase):
             spec=dict(id='bert5',name='tiny image+text',engine='bert5_fusion_v1',labels=LABELS,has_head=True,training_supported=True)
             write(p/'manifest.json',spec);write(p/'package.json',spec)
             self.assertEqual(inspect_model_folder(p)['missing'],[])
+            spec['weight_hashes'] = inspect_model_folder(p)['hashes']
+            write(p/'manifest.json', spec)
             engine=make_engine(store,'bert5','cpu')
             with self.assertRaisesRegex(ValueError,'설명문'):engine.features([Image.new('RGB',(32,32))],[''])
             features=engine.features([Image.new('RGB',(32,32))],['a'])
@@ -50,6 +52,8 @@ class Bert5Tests(unittest.TestCase):
             self.assertEqual(len(fresh.scores(f)[0]),22)
             history=read(run/'history.json');best=max(history,key=lambda h:h['dev_f1_at_5'])
             self.assertEqual(result['selected_epoch'],best['epoch'])
+            from tests.test_model_archive import assert_real_roundtrip
+            assert_real_roundtrip(self, store, child['id'], Image.new('RGB', (32, 32)), 'a')
 
     def test_missing_description_rejected_before_inference_and_training(self):
         with tempfile.TemporaryDirectory(dir=Path(__file__).absolute().parent.parent) as tmp:

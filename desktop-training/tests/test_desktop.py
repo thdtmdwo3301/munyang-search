@@ -53,6 +53,37 @@ class DesktopTests(unittest.TestCase):
         self.assertFalse(self.window.train_button.isEnabled())
         self.assertFalse(self.window.infer_button.isEnabled())
 
+    def test_save_as_and_load_archive_buttons(self):
+        from core import LABELS, sha
+        folder = self.service.store.item('models', 'save_test'); folder.mkdir()
+        (folder/'head.safetensors').write_bytes(b'fixture')
+        write(folder/'manifest.json', dict(id='save_test', name='새 문양 모델', engine='dino_head_v1',
+            labels=LABELS, has_head=True, weight_hashes={'head.safetensors': sha(folder/'head.safetensors')}))
+        self.window.refresh()
+        self.window.models.selectRow(0); self.qt.processEvents()
+        self.assertTrue(self.window.save_model_button.isEnabled())
+        destination = Path(self.tmp.name)/'다른 이름.zip'
+        with patch('desktop.QFileDialog.getSaveFileName', return_value=(str(destination), '')), \
+             patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.Yes):
+            self.window.save_model_button.click(); self.wait_task()
+        self.assertTrue(destination.is_file())
+        self.assertIn('저장 완료', self.window.message.text())
+        with patch('desktop.QFileDialog.getOpenFileName', return_value=(str(destination), '')), \
+             patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.Yes), \
+             patch.object(self.service, 'import_model_archive', return_value={'name': '새 문양 모델'}) as load:
+            self.window.load_archive_button.click(); self.wait_task()
+        load.assert_called_once_with(str(destination))
+        self.assertIn('불러오기 완료', self.window.message.text())
+
+    def test_save_cancel_does_not_export(self):
+        folder = self.service.store.item('models', 'cancel'); folder.mkdir()
+        write(folder/'manifest.json', dict(id='cancel', name='cancel'))
+        self.window.refresh(); self.window.models.selectRow(0)
+        with patch('desktop.QFileDialog.getSaveFileName', return_value=('', '')), \
+             patch.object(self.service, 'export_model') as export:
+            self.window.save_model_as()
+        export.assert_not_called()
+
     def test_data_registration_and_plan(self):
         path = Path(self.tmp.name) / 'data.zip'; path.write_bytes(archive())
         self.window.data_name.setText('합성 테스트'); self.window.zip_path.setText(str(path))

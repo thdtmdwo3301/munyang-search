@@ -95,7 +95,7 @@ class App:
                 deleted_models.append(item)
         return dict(datasets=self.store.list('datasets'), deleted_datasets=deleted, models=models, deleted_models=deleted_models, runs=self.store.list('runs'),
                     active=read(active) if active.exists() else None, labels=LABELS,
-                    dependencies=libs, storage=str(self.store.root), retention=self.model_retention(), version='0.13.0')
+                    dependencies=libs, storage=str(self.store.root), retention=self.model_retention(), version='0.14.0')
 
     def model_retention(self):
         path=local_only(self.store.root/'model_retention.json')
@@ -265,16 +265,17 @@ class App:
     def inspect_model(self, path):
         return inspect_model_folder(path)
 
-    def validate_model(self, model_id, spec):
+    def validate_model(self, model_id, spec, store=None):
+        store = store or self.store
         executable=Path(sys.executable)
         if executable.name.lower()=='pythonw.exe': executable=executable.with_name('python.exe')
         env=os.environ.copy()
         env.update(HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1',PYTHONUTF8='1',
-                   HF_HOME=str(self.store.root/'cache/huggingface'),TORCH_HOME=str(self.store.root/'cache/torch'),
-                   TMPDIR=str(self.store.root/'cache'),TEMP=str(self.store.root/'cache'),TMP=str(self.store.root/'cache'))
-        p=self.store.item('models',model_id)
+                   HF_HOME=str(store.root/'cache/huggingface'),TORCH_HOME=str(store.root/'cache/torch'),
+                   TMPDIR=str(store.root/'cache'),TEMP=str(store.root/'cache'),TMP=str(store.root/'cache'))
+        p=store.item('models',model_id)
         with (p/'registration_check.log').open('w',encoding='utf-8') as log:
-            result=subprocess.run([str(executable),str(ROOT/'worker.py'),'--root',str(self.store.root),'--probe-model',model_id],
+            result=subprocess.run([str(executable),str(ROOT/'worker.py'),'--root',str(store.root),'--probe-model',model_id],
                 input=json.dumps(spec),text=True,encoding='utf-8',stdout=log,stderr=subprocess.STDOUT,
                 cwd=str(ROOT),env=env,timeout=1800,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
@@ -283,6 +284,20 @@ class App:
         report=read(p/'registration_check.json')
         if report.get('status')!='passed': raise ValueError('모델 로딩 검증을 통과하지 못했습니다.')
         return report
+
+    def export_model(self, model_id, destination, overwrite=False):
+        from model_archive import export_model
+        with self.lock:
+            if self.is_running(): raise ValueError('학습·추론이 끝난 후 가중치를 저장하세요.')
+            return export_model(self.store, model_id, destination, overwrite)
+
+    def import_model_archive(self, path):
+        from model_archive import import_model
+        with self.lock:
+            if self.is_running(): raise ValueError('학습·추론이 끝난 후 가중치를 불러오세요.')
+            if not all(self.snapshot()['dependencies'].values()):
+                raise ValueError('가중치 로딩 검사를 위해 먼저 실행 환경을 설치하세요.')
+            return import_model(self.store, path, self.validate_model)
 
     def import_model(self, checked):
         """Import an allowlist, preserve source and never expose half-copied models."""

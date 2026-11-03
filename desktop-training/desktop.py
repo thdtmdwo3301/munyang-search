@@ -3,6 +3,7 @@ import json
 import sys
 import traceback
 import time
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -259,10 +260,13 @@ class MainWindow(QMainWindow):
         self.inspect_button=button('파일 확인',self.inspect_model); box.addWidget(self.inspect_button)
         self.model_check_text=label('폴더 선택 → 파일 확인 → 등록 순서로 진행합니다.',True); box.addWidget(self.model_check_text)
         self.register_button = button('확인한 모델 등록', self.register_model,True); box.addWidget(self.register_button)
+        self.load_archive_button = button('저장한 가중치 ZIP 불러오기', self.load_model_archive); box.addWidget(self.load_archive_button)
         box.addWidget(label('DINO 또는 A/B+RBF 모델의 기존 분류 헤드를 추가 학습할 수 있습니다. 원본 특징 추출부는 고정합니다. RBF 파일 하나만으로는 등록할 수 없습니다. 등록 시 실제 로딩을 검사합니다.', True))
         self.models = table(['이름', '상태', '평가 F1@5', '모델 ID']); layout.addWidget(self.models)
         self.models.itemSelectionChanged.connect(self.enable_model_actions)
         self.activate_button = button('선택 모델 적용', self.activate_model, True); layout.addWidget(self.activate_button)
+        self.save_model_button = button('선택 가중치 다른 이름으로 저장…', self.save_model_as); layout.addWidget(self.save_model_button)
+        layout.addWidget(label('선택 가중치와 실행에 필요한 원본 모델을 ZIP 하나로 저장합니다. 등록 이미지·데이터는 포함하지 않습니다. 다른 PC에서도 위의 ZIP 불러오기로 등록할 수 있습니다.', True))
         actions=QHBoxLayout();self.delete_model_button=button('선택 가중치 삭제',self.delete_model)
         self.model_trash_toggle=button('삭제 가중치 보관함 보기',self.toggle_model_trash)
         actions.addWidget(self.delete_model_button);actions.addWidget(self.model_trash_toggle);layout.addLayout(actions)
@@ -363,7 +367,7 @@ class MainWindow(QMainWindow):
         running = self.service.is_running()
         for b in (self.import_button, self.plan_button, self.activate_button, self.advanced_button,
                   self.data_file_button,self.data_folder_button,self.single_data_panel,self.data_name): b.setEnabled(idle)
-        for b in (self.folder_button,self.inspect_button): b.setEnabled(idle and not running)
+        for b in (self.folder_button,self.inspect_button,self.load_archive_button): b.setEnabled(idle and not running)
         self.register_button.setEnabled(idle and not running and bool(self.model_check and not self.model_check['missing']))
         self.train_button.setEnabled(idle and ready and not running and self.train_model.count() > 0 and self.dataset_choices.count() > 0)
         self.infer_button.setEnabled(idle and ready and not running and self.infer_model.count() > 0)
@@ -378,6 +382,7 @@ class MainWindow(QMainWindow):
         if not hasattr(self,'restore_model_button'):return
         idle=self.task is None and not self.service.is_running()
         self.delete_model_button.setEnabled(idle and bool(self.model_key(self.models)))
+        self.save_model_button.setEnabled(idle and bool(self.model_key(self.models)))
         self.restore_model_button.setEnabled(idle and bool(self.model_key(self.deleted_models,1)))
         if hasattr(self,'purge_model_button'):
             self.purge_model_button.setEnabled(idle and bool(self.model_key(self.deleted_models,1)))
@@ -555,6 +560,45 @@ class MainWindow(QMainWindow):
     def update_data_label_count(self):
         count=sum(self.data_labels.item(i).checkState()==Qt.CheckState.Checked for i in range(self.data_labels.count()))
         self.data_label_count.setText(f'선택한 정답: {count} / 5')
+
+    def save_model_as(self):
+        key = self.model_key(self.models)
+        model = next((m for m in self.state.get('models', []) if m['id'] == key), None)
+        if not model: return
+        safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', model.get('name', key)).strip(' .')[:80] or 'model'
+        path, _ = QFileDialog.getSaveFileName(self, '가중치 다른 이름으로 저장',
+            str(self.service.store.root.parent/(safe_name+'.zip')), '가중치 백업 ZIP (*.zip)',
+            options=QFileDialog.Option.DontUseNativeDialog|QFileDialog.Option.DontConfirmOverwrite)
+        if not path: return
+        try:
+            target = local_only(path)
+            if target.suffix.lower() != '.zip': target = target.with_name(target.name+'.zip')
+            overwrite = target.exists()
+            text = ('선택 가중치와 필요한 백본을 함께 저장합니다. 모델에 따라 수 GB 이상이며 저장에 시간이 걸릴 수 있습니다.\n'
+                    '등록 데이터와 현재 적용 모델은 변경하지 않습니다.\n\n저장 위치: '+str(target))
+            if overwrite: text += '\n\n같은 이름의 기존 ZIP을 교체합니다. 계속할까요?'
+            if QMessageBox.question(self, '가중치 저장 확인', text,
+                QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes: return
+            self.run_task(lambda: self.service.export_model(key, str(target), overwrite),
+                lambda r: self.message.setText(f'가중치 저장 완료 · {r["bytes"]/1024**3:.2f} GB\n{r["path"]}'))
+            self.message.setText('가중치 저장 중 · 필요한 원본 모델을 함께 복사하고 무결성을 확인합니다. 창을 닫지 마세요.')
+        except Exception as e: self.error(str(e))
+
+    def load_model_archive(self):
+        path, _ = QFileDialog.getOpenFileName(self, '저장한 가중치 ZIP 불러오기',
+            str(self.service.store.root.parent), '가중치 백업 ZIP (*.zip)', options=QFileDialog.Option.DontUseNativeDialog)
+        if not path: return
+        if QMessageBox.question(self, '가중치 불러오기',
+            '이 프로그램에서 저장한 신뢰할 수 있는 가중치 ZIP만 선택하세요.\n'
+            '파일 무결성과 실제 모델 로딩을 검사한 뒤 보관함에 추가합니다.\n'
+            '기존 가중치는 덮어쓰지 않으며 현재 적용 모델도 바꾸지 않습니다. 계속할까요?',
+            QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes: return
+        def done(result):
+            self.message.setText(f'{result["name"]} 불러오기 완료. 보관함에서 선택 후 필요한 경우 모델 적용을 눌러 주세요.')
+        self.run_task(lambda: self.service.import_model_archive(path), done)
+        self.message.setText('가중치 불러오는 중 · 압축을 풀고 실제 로딩을 검사합니다. 창을 닫지 마세요.')
 
     def register_model(self):
         if not self.model_check or self.model_check['missing']:
