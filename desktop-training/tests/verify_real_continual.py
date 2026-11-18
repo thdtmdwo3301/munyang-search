@@ -12,7 +12,7 @@ import csv,io,zipfile
 from pathlib import Path
 from app_service import App
 from core import read,write,sha
-from worker import head_state_hash
+from model_runner import head_state_hash
 
 
 def main():

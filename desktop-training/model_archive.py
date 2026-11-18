@@ -63,7 +63,7 @@ def export_model(store, model_id, destination, overwrite=False):
     store.check_model_available(model_id)
     destination = local_only(destination)
     if destination.suffix.lower() != '.zip': raise ValueError('저장 파일 이름은 .zip으로 끝나야 합니다.')
-    if store.root == destination or store.root in destination.parents:
+    if any(p==destination or p in destination.parents for p in (store.root,store.kind_root('models'),store.kind_root('datasets'))):
         raise ValueError('프로그램 내부 보관함 대신 별도의 로컬 저장 폴더를 선택하세요.')
     if not destination.parent.is_dir(): raise ValueError('저장할 폴더가 없습니다.')
     if destination.exists() and (not overwrite or not destination.is_file()):
@@ -172,12 +172,12 @@ def inspect_archive(path):
 def import_model(store, path, validator):
     path = local_only(path)
     bundle, size, order = inspect_archive(path)
-    if shutil.disk_usage(store.root).free < size + 512*1024**2:
+    if shutil.disk_usage(store.kind_root('models')).free < size + 512*1024**2:
         raise ValueError('가중치를 불러올 로컬 저장 공간이 부족합니다.')
     mapping = {old: uid('loaded') for old in order}
     committed = []
     # Stage and load-check the whole dependency graph before adding anything to the shelf.
-    with tempfile.TemporaryDirectory(prefix='model-import-', dir=store.root/'imports') as temporary:
+    with tempfile.TemporaryDirectory(prefix='.model-import-', dir=store.kind_root('models')) as temporary:
         stage = Store(Path(temporary)/'workspace')
         with zipfile.ZipFile(path) as archive:
             if json.loads(archive.read('bundle.json')) != bundle: raise ValueError('선택한 ZIP이 변경됐습니다.')

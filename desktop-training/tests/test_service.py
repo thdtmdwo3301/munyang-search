@@ -27,6 +27,69 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(result['count'], 3)
         self.assertEqual(len(self.app.snapshot()['datasets']), 1)
 
+    def run_fixture(self,key,status='complete',**extra):
+        folder=self.app.store.item('runs',key);folder.mkdir()
+        write(folder/'status.json',dict(id=key,status=status,kind='train',name=key,**extra))
+        write(folder/'config.json',dict(model_id='candidate'))
+        write(folder/'result.json',dict(model_id='candidate',metrics={'eval':{'f1_at_5':.8}}))
+        (folder/'worker.log').write_text('immutable fixture log')
+        return folder
+
+    def test_run_list_deletion_preserves_active_model_history_and_survives_restart(self):
+        model=self.model_fixture('candidate'); self.app.activate('candidate')
+        data=self.app.store.import_zip(archive(),'retained data')
+        folder=self.run_fixture('finished'); self.run_fixture('other')
+        before={p.name:sha(p) for p in folder.iterdir()}
+        model_before={p.name:sha(p) for p in model.iterdir()}
+        active=(self.root/'active.json').read_bytes()
+        self.app.set_run_deleted('finished',True)
+        self.assertEqual([r['id'] for r in self.app.snapshot()['runs']],['other'])
+        self.assertEqual({r['id'] for r in self.app.store.list('runs')},{'finished','other'})
+        restarted=App(self.root)
+        self.assertEqual([r['id'] for r in restarted.snapshot()['runs']],['other'])
+        self.assertEqual({p.name:sha(p) for p in folder.iterdir()},before)
+        self.assertEqual({p.name:sha(p) for p in model.iterdir()},model_before)
+        self.assertEqual((self.root/'active.json').read_bytes(),active)
+        self.assertFalse(restarted.store.dataset_deleted(data['id']))
+        self.assertFalse(restarted.store.model_deleted('candidate'))
+        with self.assertRaisesRegex(ValueError,'이미 삭제'):restarted.set_run_deleted('finished',True)
+        restarted.set_run_deleted('finished',False)
+        self.assertEqual(len(restarted.snapshot()['runs']),2)
+        self.assertEqual([e['action'] for e in read(self.root/'run_trash/finished.json')['events']],['deleted','restored'])
+
+    def test_run_delete_without_result_or_weights_and_finished_states(self):
+        for state in ('complete','failed','cancelled','interrupted'):
+            folder=self.run_fixture(state,status=state); (folder/'result.json').unlink()
+            self.app.set_run_deleted(state,True)
+            self.assertTrue(self.app.store.run_deleted(state))
+        self.assertEqual(self.app.snapshot()['runs'],[])
+        self.assertEqual(len(self.app.store.list('runs')),4)
+
+    def test_run_delete_rejects_busy_bad_ids_statuses_and_symlink(self):
+        folder=self.run_fixture('finished')
+        with patch.object(self.app,'is_running',return_value=True):
+            with self.assertRaisesRegex(ValueError,'실행 중'):self.app.set_run_deleted('finished',True)
+        for state in ('training','queued','mystery'):
+            write(folder/'status.json',dict(id='finished',kind='train',status=state))
+            with self.assertRaises(ValueError):self.app.set_run_deleted('finished',True)
+        for status in (dict(id='other',kind='train',status='complete'),dict(id='finished',kind='infer',status='complete')):
+            write(folder/'status.json',status)
+            with self.assertRaises(ValueError):self.app.set_run_deleted('finished',True)
+        write(folder/'status.json',dict(id='finished',kind='train',status='complete'))
+        for key in ('../models/candidate','/home/mount/NAS_MOUNT/forbidden','missing'):
+            with self.assertRaises(ValueError):self.app.set_run_deleted(key,True)
+        with self.assertRaises(ValueError):self.app.set_run_deleted('finished','true')
+        marker=self.root/'run_trash/finished.json'; marker.symlink_to(folder/'config.json')
+        with self.assertRaises(ValueError):self.app.set_run_deleted('finished',True)
+        self.assertEqual(read(folder/'config.json'),dict(model_id='candidate'))
+
+    def test_dismissed_run_still_visible_to_internal_safety_checks(self):
+        folder=self.run_fixture('finished'); self.app.set_run_deleted('finished',True)
+        write(folder/'status.json',dict(id='finished',kind='train',status='training'))
+        # Simulate external status damage: a UI tombstone must not bypass busy guards.
+        with self.assertRaisesRegex(ValueError,'실행 중'):self.app.set_run_deleted('finished',False)
+        with self.assertRaisesRegex(ValueError,'실행 중'):self.app.set_model_retention(True,7)
+
     def test_dataset_delete_restore_preserves_history_and_files(self):
         dataset=self.app.store.import_zip(archive(),'잘못 등록한 자료');key=dataset['id']
         folder=self.app.store.item('datasets',key)

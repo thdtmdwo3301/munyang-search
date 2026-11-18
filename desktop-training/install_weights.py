@@ -133,6 +133,15 @@ def workspace_lock(root):
 class WeightInstaller:
     def __init__(self, root, manifest, sources, parts_dir=None, allow_test_http=False):
         self.root = safe(root)
+        storage=safe(self.root/'workspace/storage.json')
+        config=json.loads(storage.read_text(encoding='utf-8')) if storage.is_file() else {}
+        if config and config.get('version')!=1: raise ValueError('Invalid storage settings')
+        custom=config.get('models')
+        if custom is not None and (not isinstance(custom,str) or not Path(custom).is_absolute()):
+            raise ValueError('Model storage must be an absolute local path')
+        self.models_root=safe(custom if custom is not None else self.root/'workspace/models')
+        if custom is not None and not self.models_root.is_dir():
+            raise ValueError('Configured model disk/folder is unavailable; no fallback or download performed')
         self.manifest = validate_manifest(manifest)
         self.sources = sources
         self.local_parts = safe(parts_dir if parts_dir is not None else self.root / 'weight_parts')
@@ -155,13 +164,14 @@ class WeightInstaller:
             if safe(self.root / 'workspace/model_trash' / (mid + '.json')).exists():
                 preserved.append(mid + ' (user-deleted; not restored)')
                 continue
-            folder = safe(self.root / 'workspace/models' / mid)
+            folder = safe(self.models_root / mid)
             if not folder.exists():
                 missing.append(mid)
                 continue
             for name in self.manifest['files']:
                 if name.startswith('workspace/models/' + mid + '/'):
-                    if not matches(self.root / name, self.manifest['file_sizes'][name], self.manifest['file_hashes'][name]):
+                    target=self.models_root/Path(name).relative_to('workspace/models')
+                    if not matches(target, self.manifest['file_sizes'][name], self.manifest['file_hashes'][name]):
                         raise ValueError('Existing model is incomplete or changed; nothing was overwritten. Use a new empty program folder: ' + mid)
             preserved.append(mid)
         return missing, preserved
@@ -273,15 +283,22 @@ class WeightInstaller:
                 else:
                     # A cached part is checked by SHA-256 below; reserve retry space.
                     to_download += part['bytes']
-            required = to_download + self.manifest['bytes'] + sum(self.manifest['file_sizes'].values()) + 512 * 1024**2
+            model_disk=self.models_root
+            while not model_disk.exists():model_disk=model_disk.parent
+            unpack_bytes=sum(self.manifest['file_sizes'].values())+512*1024**2
+            required = to_download + self.manifest['bytes'] + 512 * 1024**2
+            same_disk=self.cache.stat().st_dev==model_disk.stat().st_dev
+            if same_disk:required+=unpack_bytes
             if shutil.disk_usage(self.cache).free < required:
                 raise RuntimeError(f'Not enough disk space. Free at least {required / 1024**3:.1f} GiB and retry.')
+            if not same_disk and shutil.disk_usage(model_disk).free<unpack_bytes:
+                raise RuntimeError('Not enough free space on the configured model disk')
             archive = self.restore(self.parts())
-            with tempfile.TemporaryDirectory(prefix='extract-', dir=self.cache) as temporary:
+            with tempfile.TemporaryDirectory(prefix='.weight-extract-', dir=model_disk) as temporary:
                 stage = safe(temporary)
                 default = self.unpack(archive, stage)
                 for mid in missing:
-                    dest = safe(self.root / 'workspace/models' / mid)
+                    dest = safe(self.models_root / mid)
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     if dest.exists():
                         raise FileExistsError('Model appeared during installation; refusing to overwrite it')

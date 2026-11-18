@@ -40,13 +40,13 @@ class DataImportTests(unittest.TestCase):
         self.assertEqual(normalize(results[0]),normalize(results[1]))
         self.assertEqual(normalize(results[0]),normalize(results[2]))
 
-    def test_single_image_manual_gt(self):
+    def test_image_only_rejected_even_for_one_sample(self):
         image=self.source/self.rows[0]['image']; raw=image.read_bytes()
-        for labels in (None,LABELS[:4],LABELS[:6],[LABELS[0]]*5):
-            with self.assertRaisesRegex(ValueError,'5개'): self.app.import_data(image,'한 장',labels=labels)
-        item=self.app.import_data(image,'한 장',labels=LABELS[:5],split='eval')
-        self.assertEqual(item['counts'],{'eval':1})
-        self.assertEqual(self.app.store.rows([item['id']])[0]['labels'],LABELS[:5])
+        with self.assertRaisesRegex(ValueError,'labels.csv'):self.app.import_data(image,'한 장')
+        self.assertEqual(self.app.store.list('datasets'),[])
+        self.rewrite([self.rows[0]])
+        item=self.app.import_data(self.source,'CSV와 이미지 한 장')
+        self.assertEqual(item['count'],1)
         self.assertEqual(image.read_bytes(),raw)
 
     def test_missing_csv_and_image(self):

@@ -61,6 +61,14 @@ class ModelArchiveTests(unittest.TestCase):
         second, _ = self.load()
         self.assertNotEqual(loaded['id'], second['id'])
 
+    def test_import_into_relocated_model_storage(self):
+        self.app.export_model('child',self.archive)
+        target=self.target.store.root.parent/'relocated_models'
+        self.target.change_storage(str(self.target.store.kind_root('datasets')),str(target))
+        loaded,_=self.load()
+        self.assertTrue((target/loaded['id']/'manifest.json').exists())
+        self.assertFalse((self.target.store.root/'models').exists())
+
     def test_overwrite_requires_permission_and_original_is_preserved_on_failure(self):
         self.app.export_model('child', self.archive); original = self.archive.read_bytes()
         with self.assertRaisesRegex(ValueError, '같은 이름'): self.app.export_model('child', self.archive)
@@ -143,7 +151,7 @@ class ModelArchiveTests(unittest.TestCase):
 def assert_real_roundtrip(test, store, model_id, image, description=None):
     """Called by the existing small-engine integration tests, not a mocked model."""
     import torch
-    from worker import make_engine
+    from model_runner import make_engine
     app = App(store.root)
     source = make_engine(store, model_id, 'cpu')
     features = source.features([image], [description]) if description else source.features([image])

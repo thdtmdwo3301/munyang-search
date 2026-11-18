@@ -15,7 +15,7 @@ class Bert5Tests(unittest.TestCase):
         from PIL import Image
         from transformers import DINOv3ViTConfig,DINOv3ViTModel,DINOv3ViTImageProcessorFast,BertConfig,BertModel,BertTokenizerFast
         from bert5_engine import fusion_head
-        from worker import make_engine,execute
+        from model_runner import make_engine,execute
         with tempfile.TemporaryDirectory(dir=Path(__file__).absolute().parent.parent) as tmp:
             store=Store(Path(tmp)/'workspace');p=store.item('models','bert5');(p/'weights').mkdir(parents=True)
             cfg=DINOv3ViTConfig(hidden_size=32,num_hidden_layers=1,num_attention_heads=4,intermediate_size=64,image_size=32,patch_size=16,num_register_tokens=4)

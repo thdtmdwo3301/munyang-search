@@ -94,9 +94,22 @@ class App:
                 record=read(local_only(self.store.root/'model_trash'/(m['id']+'.json')))
                 item['trash']={k:record.get(k) for k in ('status','purge_after','error')}
                 deleted_models.append(item)
-        return dict(datasets=self.store.list('datasets'), deleted_datasets=deleted, models=models, deleted_models=deleted_models, runs=self.store.list('runs'),
+        # Hide dismissed history only in the UI. Internal safety/audit checks must
+        # continue seeing every original run, including its status and provenance.
+        visible_runs=[r for r in self.store.list('runs') if not (r.get('id') and self.store.run_deleted(r['id']))]
+        return dict(datasets=self.store.list('datasets'), deleted_datasets=deleted, models=models, deleted_models=deleted_models, runs=visible_runs,
                     active=read(active) if active.exists() else None, labels=LABELS,
-                    dependencies=libs, storage=str(self.store.root), retention=self.model_retention(), version='0.15.2')
+                    dependencies=libs, storage=str(self.store.root),
+                    storage_paths={k:str(v) for k,v in self.store.locations.items()},
+                    retention=self.model_retention(), version='0.18.3')
+
+    def change_storage(self,datasets,models):
+        from storage_settings import relocate
+        with self.lock:
+            self._require_model_idle()
+            root=self.store.root
+            try: return relocate(self.store,datasets,models)
+            finally: self.store=Store(root)
 
     def model_retention(self):
         path=local_only(self.store.root/'model_retention.json')
@@ -173,7 +186,7 @@ class App:
                 if (info.st_dev,info.st_ino)!=(device,inode) or not stat.S_ISREG(info.st_mode):
                     raise ValueError('삭제 대상이 변경되어 중단했습니다: '+str(path))
                 path.unlink()
-                record['removed_files'].append(str(path.relative_to(self.store.root)))
+                record['removed_files'].append(str(path.relative_to(self.store.root)) if self.store.root in path.parents else str(path))
                 record['removed_bytes']+=info.st_size
                 write(marker,record)
             for directory in directories:
@@ -263,8 +276,65 @@ class App:
             write(marker,record)
             return dict(id=dataset_id,name=manifest['name'],count=manifest['count'],status=record['status'])
 
+    def set_run_deleted(self,run_id,deleted):
+        """Dismiss a finished training record without touching weights or audit files."""
+        if type(deleted) is not bool: raise ValueError('삭제 여부가 잘못됐습니다.')
+        with self.lock:
+            self._require_model_idle()
+            folder=self.store.item('runs',run_id)
+            status_path=local_only(folder/'status.json')
+            if not status_path.is_file(): raise ValueError('학습 기록을 찾을 수 없습니다.')
+            status=read(status_path)
+            if status.get('id')!=run_id: raise ValueError('학습 기록 ID가 일치하지 않습니다.')
+            if status.get('kind')!='train': raise ValueError('학습 기록만 목록에서 삭제할 수 있습니다.')
+            if status.get('status') not in ('complete','failed','cancelled','interrupted'):
+                raise ValueError('종료된 학습 기록만 삭제할 수 있습니다.')
+            if self.store.run_deleted(run_id)==deleted:
+                raise ValueError('이미 삭제된 학습 기록입니다.' if deleted else '이미 표시 중인 학습 기록입니다.')
+            marker=local_only(self.store.root/'run_trash'/(run_id+'.json'))
+            record=read(marker) if marker.is_file() else dict(id=run_id,events=[])
+            record['status']='deleted' if deleted else 'restored'
+            record['events'].append(dict(action=record['status'],time=now()))
+            write(marker,record)
+            return dict(id=run_id,name=status.get('name',run_id),status=record['status'])
+
     def inspect_model(self, path):
         return inspect_model_folder(path)
+
+    def export_dataset(self, dataset_id, destination, overwrite=False):
+        """Export the verified registered source ZIP; never rewrite labels/splits."""
+        with self.lock:
+            self._require_model_idle()
+            if self.store.dataset_deleted(dataset_id): raise ValueError('삭제한 데이터는 저장할 수 없습니다.')
+            folder = self.store.item('datasets', dataset_id)
+            manifest = read(local_only(folder/'manifest.json'))
+            if manifest['id'] != dataset_id: raise ValueError('등록 데이터 ID가 일치하지 않습니다.')
+            source = local_only(folder/'original.zip'); target = local_only(destination)
+            if target.suffix.lower() != '.zip': raise ValueError('저장 파일은 ZIP이어야 합니다.')
+            for root in (self.store.root, self.store.kind_root('models'), self.store.kind_root('datasets')):
+                if root == target or root in target.parents:
+                    raise ValueError('프로그램 내부 보관함 대신 별도 로컬 폴더를 선택하세요.')
+            if not target.parent.is_dir(): raise ValueError('저장할 폴더가 없습니다.')
+            if target.exists() and (not overwrite or not target.is_file()):
+                raise ValueError('같은 이름의 파일이 있습니다. 다른 이름을 선택하세요.')
+            if not source.is_file(): raise ValueError('등록된 원본 ZIP을 찾을 수 없습니다.')
+            size = source.stat().st_size
+            if shutil.disk_usage(target.parent).free < size + 16*1024**2: raise ValueError('저장 공간이 부족합니다.')
+            partial = local_only(target.with_name('.'+target.name+'.'+uid('export')+'.partial'))
+            digest = hashlib.sha256()
+            try:
+                with source.open('rb') as src, partial.open('xb') as dst:
+                    for chunk in iter(lambda: src.read(1024**2), b''):
+                        digest.update(chunk); dst.write(chunk)
+                    dst.flush(); os.fsync(dst.fileno())
+                if digest.hexdigest() != manifest.get('archive_sha256'):
+                    raise ValueError('등록 원본 ZIP의 무결성이 달라졌습니다. 저장하지 않았습니다.')
+                local_only(target)
+                if overwrite: os.replace(partial, target)
+                else: os.link(partial, target)
+                return dict(id=dataset_id, path=str(target), bytes=size, sha256=digest.hexdigest())
+            finally:
+                if partial.exists(): partial.unlink()
 
     def validate_model(self, model_id, spec, store=None):
         store = store or self.store
@@ -276,7 +346,7 @@ class App:
                    TMPDIR=str(store.root/'cache'),TEMP=str(store.root/'cache'),TMP=str(store.root/'cache'))
         p=store.item('models',model_id)
         with (p/'registration_check.log').open('w',encoding='utf-8') as log:
-            result=subprocess.run([str(executable),str(ROOT/'worker.py'),'--root',str(store.root),'--probe-model',model_id],
+            result=subprocess.run([str(executable),str(ROOT/'model_runner.py'),'--root',str(store.root),'--probe-model',model_id],
                 input=json.dumps(spec),text=True,encoding='utf-8',stdout=log,stderr=subprocess.STDOUT,
                 cwd=str(ROOT),env=env,timeout=1800,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
@@ -309,7 +379,7 @@ class App:
             if fresh!=checked: raise ValueError('파일 확인 후 폴더가 변경되었습니다. 다시 확인해 주세요.')
             if not all(self.snapshot()['dependencies'].values()):
                 raise ValueError('실제 모델 확인을 위해 install-engine-windows.bat를 먼저 실행하세요.')
-            if shutil.disk_usage(self.store.root).free < fresh['bytes']+512*1024**2:
+            if shutil.disk_usage(self.store.kind_root('models')).free < fresh['bytes']+512*1024**2:
                 raise ValueError('모델 복사와 확인에 필요한 로컬 저장 공간이 부족합니다.')
             key=uid('imported'); dest=self.store.item('models',key); dest.mkdir()
             write(dest/'import_status.json',dict(status='copying',source=fresh['source'],created=now()))
@@ -332,44 +402,36 @@ class App:
     def is_running(self):
         return self.process is not None and self.process.poll() is None
 
-    def import_data(self, path, name, labels=None, split='train'):
-        """Normalize local folder/CSV/single image to the existing validated import."""
+    def import_data(self, path, name):
+        """Require existing image/GT pairs; no in-program label authoring."""
         path = local_only(path)
         if path.is_file() and path.suffix.lower()=='.zip':
             if path.stat().st_size > 256 * 1024**2:
                 raise ValueError('ZIP은 256MB 이하로 나누어 등록하세요.')
             return self.store.import_zip(path.read_bytes(), name)
-        image_mode=path.is_file() and path.suffix.lower() in {'.jpg','.jpeg','.png','.webp'}
-        if image_mode:
-            if not labels or len(labels)!=5 or len(set(labels))!=5 or not set(labels)<=set(LABELS):
-                raise ValueError('이미지를 등록하려면 실제 정답 감성어를 서로 다르게 5개 선택하세요. 정답 없이 사용하려면 추론 화면을 이용하세요.')
-            if split not in ('train','dev','eval'): raise ValueError('학습·검증·평가(테스트) 중 용도를 선택하세요.')
-            rows=[dict(id=path.stem,image='images/'+path.name,labels=';'.join(labels),split=split,description='')]
-            text=io.StringIO(newline=''); writer=csv.DictWriter(text,fieldnames=['id','image','labels','split','description'])
-            writer.writeheader(); writer.writerows(rows); csv_bytes=text.getvalue().encode('utf-8-sig')
-            inputs={rows[0]['image']:path}
-        else:
-            csv_path=local_only(path/'labels.csv') if path.is_dir() else path
-            if csv_path.suffix.lower()!='.csv' or not csv_path.is_file():
-                raise ValueError('labels.csv가 있는 폴더, 정답 CSV, ZIP 또는 이미지 파일을 선택하세요.')
-            if csv_path.stat().st_size>8*1024**2: raise ValueError('정답 CSV는 8MB 이하로 나누어 등록하세요.')
-            csv_bytes=csv_path.read_bytes()
-            reader=csv.DictReader(io.StringIO(csv_bytes.decode('utf-8-sig')))
-            if not {'id','image','labels','split'}<=set(reader.fieldnames or []):
-                raise ValueError('정답 CSV에 id, image, labels, split 열이 필요합니다.')
-            rows=[]
-            for row in reader:
-                rows.append(row)
-                if len(rows)>10000: raise ValueError('데이터는 10,000개 행 이하로 나누어 등록하세요.')
-            inputs={}
-            for row in rows:
-                rel=(row.get('image') or '').strip(); relative=PurePosixPath(rel)
-                if not rel or relative.is_absolute() or '..' in relative.parts or '\\' in rel or ':' in rel:
-                    raise ValueError('CSV 이미지 경로는 같은 폴더 아래의 상대 경로여야 합니다.')
-                image_path=local_only(csv_path.parent/rel)
-                if csv_path.parent not in image_path.parents or image_path.suffix.lower() not in {'.jpg','.jpeg','.png','.webp'}:
-                    raise ValueError('CSV 이미지 경로 또는 이미지 확장자를 확인하세요: '+rel)
-                inputs[rel]=image_path
+        if path.suffix.lower() in {'.jpg','.jpeg','.png','.webp'}:
+            raise ValueError('학습 등록에는 이미지와 labels.csv 정답 데이터가 함께 필요합니다. 이미지만 사용하려면 추론 화면을 이용하세요.')
+        csv_path=local_only(path/'labels.csv') if path.is_dir() else path
+        if csv_path.suffix.lower()!='.csv' or not csv_path.is_file():
+            raise ValueError('이미지와 labels.csv가 있는 폴더, 정답 CSV 또는 ZIP을 선택하세요.')
+        if csv_path.stat().st_size>8*1024**2: raise ValueError('정답 CSV는 8MB 이하로 나누어 등록하세요.')
+        csv_bytes=csv_path.read_bytes()
+        reader=csv.DictReader(io.StringIO(csv_bytes.decode('utf-8-sig')))
+        if not {'id','image','labels','split'}<=set(reader.fieldnames or []):
+            raise ValueError('정답 CSV에 id, image, labels, split 열이 필요합니다.')
+        rows=[]
+        for row in reader:
+            rows.append(row)
+            if len(rows)>10000: raise ValueError('데이터는 10,000개 행 이하로 나누어 등록하세요.')
+        inputs={}
+        for row in rows:
+            rel=(row.get('image') or '').strip(); relative=PurePosixPath(rel)
+            if not rel or relative.is_absolute() or '..' in relative.parts or '\\' in rel or ':' in rel:
+                raise ValueError('CSV 이미지 경로는 같은 폴더 아래의 상대 경로여야 합니다.')
+            image_path=local_only(csv_path.parent/rel)
+            if csv_path.parent not in image_path.parents or image_path.suffix.lower() not in {'.jpg','.jpeg','.png','.webp'}:
+                raise ValueError('CSV 이미지 경로 또는 이미지 확장자를 확인하세요: '+rel)
+            inputs[rel]=image_path
         # Read only the files named in the CSV, never recursively scan a directory.
         total=len(csv_bytes)
         for rel,image_path in inputs.items():
@@ -381,7 +443,7 @@ class App:
         blob=io.BytesIO()
         with zipfile.ZipFile(blob,'w',zipfile.ZIP_DEFLATED) as archive:
             archive.writestr('labels.csv',csv_bytes)
-            archive.writestr('import_source.json',json.dumps(dict(source=str(path),kind='image' if image_mode else 'csv_or_folder'),ensure_ascii=False))
+            archive.writestr('import_source.json',json.dumps(dict(source=str(path),kind='csv_or_folder'),ensure_ascii=False))
             for rel,image_path in inputs.items():
                 # Recheck local path just before reading; don't follow symlinks/junctions.
                 archive.write(local_only(image_path),rel)
@@ -516,7 +578,7 @@ class App:
                 executable = executable.with_name('python.exe')
             try:
                 with (p / 'worker.log').open('w', encoding='utf-8') as log:
-                    self.process = subprocess.Popen([str(executable), str(ROOT / 'worker.py'), '--root', str(self.store.root), '--run', plan['id']],
+                    self.process = subprocess.Popen([str(executable), str(ROOT / 'model_runner.py'), '--root', str(self.store.root), '--run', plan['id']],
                         cwd=str(ROOT), stdout=log, stderr=subprocess.STDOUT, env=env,
                         creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
             except Exception as e:
@@ -554,6 +616,7 @@ class App:
 
     def activate(self, key):
         with self.lock:
+            self._require_model_idle()
             self.store.check_model_available(key)
             model = read(self.store.item('models', key) / 'manifest.json')
             if not model.get('has_head'):

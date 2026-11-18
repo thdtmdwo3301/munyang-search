@@ -14,4 +14,4 @@ if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" && "${QT_QPA_PLATFORM:-}" !
   echo 'No graphical display is connected. Use a Linux desktop/X11 session; see README for headless tests.' >&2
   exit 1
 fi
-exec .venv-linux/bin/python desktop.py
+exec .venv-linux/bin/python training_ui.py

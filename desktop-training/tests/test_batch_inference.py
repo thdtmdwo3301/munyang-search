@@ -81,9 +81,9 @@ class BatchInferenceTests(unittest.TestCase):
 
     @unittest.skipUnless(HAS_ENGINE, 'ML runtime not installed')
     def test_worker_loads_once_and_image_specific_results_and_gt(self):
-        from worker import execute
+        from model_runner import execute
         folder = self.plan()
-        with patch('worker.make_engine', return_value=self.fake_engine()) as load:
+        with patch('model_runner.make_engine', return_value=self.fake_engine()) as load:
             execute(self.app.store.root, folder.name)
             load.assert_called_once()
         result = read(folder/'result.json')
@@ -91,7 +91,12 @@ class BatchInferenceTests(unittest.TestCase):
         self.assertFalse(result['GT_input']); self.assertFalse(result['description_input'])
         self.assertEqual([i['file_name'] for i in result['items']], [Path(p).name for p in self.images])
         self.assertNotEqual(result['items'][0]['scores'], result['items'][1]['scores'])
-        self.app.import_data(self.images[0], '첫 이미지', labels=LABELS[:5], split='train')
+        import csv
+        image=Path(self.images[0]);csv_path=image.parent/'labels.csv'
+        with csv_path.open('w',newline='',encoding='utf-8') as out:
+            writer=csv.writer(out);writer.writerow(['id','image','labels','split'])
+            writer.writerow(['first',image.name,';'.join(LABELS[:5]),'train'])
+        self.app.import_data(csv_path, '첫 이미지')
         first = self.app.inference_comparison(folder.name, 0)
         other = self.app.inference_comparison(folder.name, 1)
         self.assertEqual(first['status'], 'matched'); self.assertEqual(other['status'], 'unregistered')
@@ -100,9 +105,9 @@ class BatchInferenceTests(unittest.TestCase):
 
     @unittest.skipUnless(HAS_ENGINE, 'ML runtime not installed')
     def test_cancel_keeps_completed_results(self):
-        from worker import execute, Cancelled
+        from model_runner import execute, Cancelled
         folder = self.plan()
-        with patch('worker.make_engine', return_value=self.fake_engine(cancel_folder=folder)):
+        with patch('model_runner.make_engine', return_value=self.fake_engine(cancel_folder=folder)):
             with self.assertRaises(Cancelled): execute(self.app.store.root, folder.name)
         result = read(folder/'result.json')
         self.assertEqual([i['status'] for i in result['items']], ['complete', 'pending', 'pending'])
@@ -111,9 +116,9 @@ class BatchInferenceTests(unittest.TestCase):
 
     @unittest.skipUnless(HAS_ENGINE, 'ML runtime not installed')
     def test_failure_preserves_completed_and_pending_distinction(self):
-        from worker import execute
+        from model_runner import execute
         folder = self.plan()
-        with patch('worker.make_engine', return_value=self.fake_engine(fail=True)):
+        with patch('model_runner.make_engine', return_value=self.fake_engine(fail=True)):
             with self.assertRaisesRegex(RuntimeError, 'fixture failure'): execute(self.app.store.root, folder.name)
         result = read(folder/'result.json')
         self.assertEqual([i['status'] for i in result['items']], ['complete', 'failed', 'pending'])

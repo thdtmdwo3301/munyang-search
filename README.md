@@ -6,9 +6,9 @@ Docker는 필수가 아니다.
 
 ## Windows / Linux 데스크톱 학습 프로그램
 
-비전문가용 데이터 등록·추가 학습·평가·추론 프로그램은 [desktop-training](desktop-training/README.md)에 별도로 제공합니다. 기존 연구용 코드는 그대로 유지합니다.
+비전문가용 데이터 추가·학습·성능 비교·가중치 선택 및 저장 프로그램은 [desktop-training](desktop-training/README.md)에 별도로 제공합니다. 기존 연구용 코드는 그대로 유지합니다.
 
-- [데스크톱 0.15.2 설치 ZIP](https://github.com/thdtmdwo3301/munyang-search/releases/tag/desktop-v0.15.2) — 학습 결과의 상세 문구를 정리했습니다. 여러 이미지 추론·이전/다음 보기와 가중치 저장·불러오기는 그대로 지원합니다.
+- [데스크톱 0.18.3 설치 ZIP](https://github.com/thdtmdwo3301/munyang-search/releases/tag/desktop-v0.18.3) — 한 화면에서 학습·성능 비교·가중치 적용을 수행합니다. 데이터·가중치·학습 결과의 우클릭 저장/삭제와 펼친 목록 유지 기능을 포함합니다. 에폭·배치 크기·학습률은 고정입니다.
 - [기준 가중치 조각 / 0.13 보관본](https://github.com/thdtmdwo3301/munyang-search/releases/tag/desktop-v0.13) — 설치기가 자동으로 사용하며 수동으로 받을 필요가 없습니다.
 - Windows: 설치 ZIP 압축 해제 → `install-windows.bat` → `start-windows.bat`.
 - Linux: 설치 ZIP 압축 해제 → `bash install-linux.sh --cpu` 또는 `--gpu` → `bash start-linux.sh`.

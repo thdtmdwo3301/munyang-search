@@ -9,5 +9,5 @@ if not exist ".venv\Scripts\python.exe" (
   pause
   exit /b 1
 )
-".venv\Scripts\python.exe" desktop.py
+".venv\Scripts\python.exe" training_ui.py
 pause

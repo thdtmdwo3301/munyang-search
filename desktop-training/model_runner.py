@@ -307,8 +307,8 @@ def execute(root,run_id):
     for start in range(0,len(rows),batch):
         progress.check(); images=[]
         for r in rows[start:start+batch]:
-            path=local_only(r['image_path'])
-            if store.root/'datasets' not in path.parents or sha(path)!=r['file_sha256']: raise ValueError('등록 이후 이미지가 변경되었습니다.')
+            path=store.dataset_image(r)
+            if sha(path)!=r['file_sha256']: raise ValueError('등록 이후 이미지가 변경되었습니다.')
             with Image.open(path) as im: images.append(im.convert('RGB') if isinstance(engine,(LegacyImageEngine,Bert5Engine)) else ImageOps.exif_transpose(im).convert('RGB'))
         pieces.append(engine.features(images,[r.get('description','') for r in rows[start:start+batch]]) if isinstance(engine,Bert5Engine) else engine.training_features(images) if isinstance(engine,LegacyImageEngine) else engine.features(images))
         progress.update('extracting','이미지·설명문 특징 추출 · GT는 인코더에 입력하지 않습니다.' if isinstance(engine,Bert5Engine) else '이미지 특징 추출 · GT와 설명문은 인코더에 입력하지 않습니다.',40*min(start+batch,len(rows))/len(rows),processed=min(start+batch,len(rows)),total=len(rows),eta_seconds=None)

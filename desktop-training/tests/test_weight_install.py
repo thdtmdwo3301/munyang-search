@@ -63,6 +63,19 @@ class WeightInstallTests(unittest.TestCase):
             self.assertEqual((self.client/name).read_bytes(), value)
         self.assertEqual(active.read_text(), '{"model_id":"my-trained-model"}')
         self.assertEqual(user.read_bytes(), b'keep me')
+        with patch.object(WeightInstaller, 'download', side_effect=AssertionError('unexpected download')):
+            self.assertEqual(self.installer().run()['status'],'already_installed')
+
+    def test_custom_model_directory_and_reinstall_no_download(self):
+        from core import write
+        model_dir=self.folder/'custom_models';model_dir.mkdir()
+        write(self.client/'workspace/storage.json',dict(version=1,models=str(model_dir)))
+        result=self.installer().run();self.assertEqual(result['status'],'installed')
+        for name,value in self.files.items():
+            if name.startswith('workspace/models/'):
+                self.assertEqual((model_dir/Path(name).relative_to('workspace/models')).read_bytes(),value)
+        self.assertFalse((self.client/'workspace/models').exists())
+        self.assertEqual(self.installer().run()['status'],'already_installed')
         self.assertTrue(all((self.parts/p['file']).exists() for p in self.manifest['parts']))
         with patch.object(WeightInstaller, 'download', side_effect=AssertionError('unexpected download')):
             self.assertEqual(self.installer().run()['status'], 'already_installed')

@@ -10,7 +10,7 @@ AVAILABLE=all(importlib.util.find_spec(x) for x in ('torch','torchvision','trans
 class EngineTests(unittest.TestCase):
     def test_checkpoint_path_metadata_is_inert(self):
         import torch
-        from worker import load_checkpoint
+        from model_runner import load_checkpoint
         from pathlib import PurePath
         with tempfile.TemporaryDirectory(dir=str(Path(__file__).absolute().parent.parent)) as tmp:
             p=Path(tmp)/'fixture.pt'
@@ -25,7 +25,7 @@ class EngineTests(unittest.TestCase):
         import torch
         from PIL import Image
         from transformers import DINOv3ViTConfig,DINOv3ViTModel,DINOv3ViTImageProcessorFast
-        from worker import LegacyImageEngine,probe_model
+        from model_runner import LegacyImageEngine,probe_model
         from core import LEGACY_WEIGHTS
         with tempfile.TemporaryDirectory(dir=str(Path(__file__).absolute().parent.parent)) as tmp:
             torch.manual_seed(42); store=Store(Path(tmp)/'workspace'); p=store.item('models','legacy')
@@ -89,7 +89,7 @@ class EngineTests(unittest.TestCase):
             torch.testing.assert_close(torch.tensor(batch_result['items'][0]['scores']), torch.tensor(output['scores']), rtol=0, atol=0)
             torch.testing.assert_close(torch.tensor(batch_result['items'][1]['scores']), torch.tensor(expected2), rtol=1e-5, atol=1e-6)
             # Real optimizer steps on existing A/B heads; source weights immutable.
-            from worker import execute
+            from model_runner import execute
             from core import sha
             hashes={n:sha(p/'weights'/n) for n in LEGACY_WEIGHTS}
             dataset=store.import_zip(archive(),'three distinct samples')
@@ -122,9 +122,16 @@ class EngineTests(unittest.TestCase):
             assert_real_roundtrip(self, store, second['model_id'], image)
 
     def test_local_end_to_end(self):
+        self.local_end_to_end()
+
+    def test_relocated_storage_train_infer_and_model_archive(self):
+        import torch
+        self.local_end_to_end(relocate=True,device='cuda:0' if torch.cuda.is_available() else 'cpu')
+
+    def local_end_to_end(self,relocate=False,device='cpu'):
         import torch
         from transformers import DINOv3ViTConfig,DINOv3ViTModel,DINOv3ViTImageProcessorFast
-        from worker import execute
+        from model_runner import execute
         with tempfile.TemporaryDirectory(dir=str(Path(__file__).absolute().parent.parent)) as tmp:
             store=Store(Path(tmp)/'workspace');p=store.item('models','tiny');(p/'backbone').mkdir(parents=True)
             cfg=DINOv3ViTConfig(hidden_size=32,num_hidden_layers=1,num_attention_heads=4,intermediate_size=64,image_size=32,patch_size=16,num_register_tokens=4)
@@ -132,11 +139,21 @@ class EngineTests(unittest.TestCase):
             DINOv3ViTImageProcessorFast(size={'height':32,'width':32}).save_pretrained(p/'backbone')
             write(p/'package.json',dict(engine='dino_head_v1',labels=LABELS,has_head=False,name='synthetic test',trained_pixel_hashes=[]))
             store.register_model('tiny');d=store.import_zip(archive(),'synthetic')
-            plan=store.training_plan(dict(dataset_ids=[d['id']],model_id='tiny',epochs=1,batch=1,lr=.0001,device='cpu'))
+            plan=store.training_plan(dict(dataset_ids=[d['id']],model_id='tiny',epochs=1,batch=1,lr=.0001,device=device))
+            if relocate:
+                from app_service import App
+                app=App(store.root)
+                app.change_storage(datasets=str(Path(tmp)/'data_disk'),models=str(Path(tmp)/'model_disk'))
+                store=Store(store.root)
+                # The old immutable plan has old absolute paths; IDs + relative paths must resolve after migration.
+                self.assertFalse(Path(plan['rows'][0]['image_path']).exists())
             folder=store.item('runs',plan['id']);folder.mkdir();write(folder/'config.json',plan);write(folder/'status.json',dict(id=plan['id'],status='queued',kind='train'))
             execute(store.root,plan['id']);r=read(folder/'result.json')
             self.assertTrue(r['checks']['fresh_load_top5_equal']);self.assertEqual(r['metrics']['eval']['sample_count'],1)
             self.assertTrue((store.item('models',r['model_id'])/'head.safetensors').exists())
+            if relocate:
+                self.assertIn('model_disk',str(store.item('models',r['model_id'])))
+                self.assertEqual(r['runtime']['device'],device)
             from tests.test_model_archive import assert_real_roundtrip
             from PIL import Image
             assert_real_roundtrip(self, store, r['model_id'], Image.new('RGB', (32, 32), (20, 50, 80)))

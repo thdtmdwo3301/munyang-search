@@ -164,12 +164,39 @@ def metric(scores, rows):
 class Store:
     def __init__(self, root):
         self.root=local_only(root)
-        for name in ('datasets','models','runs','imports','cache','dataset_trash','model_trash'):
-            local_only(self.root/name).mkdir(parents=True,exist_ok=True)
+        settings=local_only(self.root/'storage.json')
+        config=read(settings) if settings.is_file() else {}
+        if config and config.get('version')!=1: raise ValueError('저장 위치 설정 형식을 확인하세요.')
+        self.locations={}
+        for kind in ('datasets','models'):
+            value=config.get(kind)
+            if value is not None and (not isinstance(value,str) or not Path(value).is_absolute()):
+                raise ValueError('저장 위치는 로컬 절대 경로여야 합니다.')
+            path=local_only(value if value is not None else self.root/kind)
+            if value is not None and not path.is_dir():
+                raise ValueError('설정된 저장 폴더를 찾을 수 없습니다. 디스크 연결을 확인하세요: '+str(path))
+            self.locations[kind]=path
+        self.validate_locations(self.locations)
+        for name in ('datasets','models','runs','imports','cache','dataset_trash','model_trash','run_trash'):
+            local_only(self.locations.get(name,self.root/name)).mkdir(parents=True,exist_ok=True)
+
+    def validate_locations(self, locations):
+        paths=[local_only(locations[k]) for k in ('datasets','models')]
+        protected=[self.root/n for n in ('runs','imports','cache','dataset_trash','model_trash','run_trash','storage_migrations')]
+        def overlaps(a,b): return a==b or a in b.parents or b in a.parents
+        if overlaps(*paths): raise ValueError('데이터와 모델 저장 폴더는 서로 겹치지 않아야 합니다.')
+        for path in paths:
+            if path==self.root or path in self.root.parents or any(overlaps(path,p) for p in protected):
+                raise ValueError('프로그램 기록 폴더와 겹치지 않는 별도 저장 폴더를 선택하세요.')
+        return dict(zip(('datasets','models'),paths))
+
+    def kind_root(self,kind):
+        if kind not in ('datasets','models','runs'): raise ValueError('잘못된 자료 종류입니다.')
+        return local_only(self.locations.get(kind,self.root/kind))
 
     def item(self,kind,key):
         if kind not in ('datasets','models','runs'): raise ValueError('잘못된 자료 종류입니다.')
-        return local_only(self.root/kind/validate_id(key))
+        return local_only(self.kind_root(kind)/validate_id(key))
 
     def dataset_deleted(self,key):
         marker=local_only(self.root/'dataset_trash'/(validate_id(key)+'.json'))
@@ -178,6 +205,11 @@ class Store:
     def model_deleted(self,key):
         marker=local_only(self.root/'model_trash'/(validate_id(key)+'.json'))
         return marker.is_file() and read(marker).get('status') in ('deleted','purging','purged')
+
+    def run_deleted(self,key):
+        """Presentation-only deletion; list('runs') still exposes safety/provenance records."""
+        marker=local_only(self.root/'run_trash'/(validate_id(key)+'.json'))
+        return marker.is_file() and read(marker).get('status')=='deleted'
 
     def check_model_available(self,key):
         def check(current,chain):
@@ -194,7 +226,7 @@ class Store:
     def list(self,kind,include_deleted=False):
         filename={'datasets':'manifest.json','models':'manifest.json','runs':'status.json'}[kind]
         out=[]
-        for p in sorted((self.root/kind).iterdir(),reverse=True):
+        for p in sorted(self.kind_root(kind).iterdir(),reverse=True):
             if not p.is_dir() or p.is_symlink(): continue
             try:
                 if kind=='datasets' and not include_deleted and self.dataset_deleted(p.name): continue
@@ -262,12 +294,23 @@ class Store:
             if manifest['labels']!=LABELS: raise ValueError('데이터 라벨 순서가 다릅니다.')
             for row in manifest['rows']:
                 r=dict(row,dataset_id=key)
+                labels=r.get('labels')
+                if not isinstance(labels,list) or len(labels)!=5 or not all(isinstance(x,str) for x in labels) or len(set(labels))!=5 or not set(labels)<=set(LABELS):
+                    raise ValueError('학습 데이터에는 서로 다른 정답 감성어 5개가 필요합니다.')
                 if r['id'] in ids or r['pixel_sha256'] in pixels: raise ValueError('선택한 데이터 사이에 동일 ID 또는 이미지가 있습니다. 중복·평가 누출을 먼저 검토하세요.')
                 ids[r['id']]=key; pixels[r['pixel_sha256']]=key
-                r['image_path']=str(local_only(p/r['image']))
-                if not (p/r['image']).is_file(): raise ValueError('등록 이미지가 없어졌습니다.')
+                r['image_path']=str(self.dataset_image(r))
+                if not Path(r['image_path']).is_file(): raise ValueError('등록 이미지가 없어졌습니다.')
                 rows.append(r)
         return rows
+
+    def dataset_image(self,row):
+        relative=PurePosixPath(row['image'])
+        if relative.is_absolute() or '..' in relative.parts or '\\' in row['image'] or ':' in row['image']:
+            raise ValueError('등록 이미지 경로를 확인하세요.')
+        folder=self.item('datasets',row['dataset_id']); path=local_only(folder/relative)
+        if folder not in path.parents: raise ValueError('등록 이미지 경로를 확인하세요.')
+        return path
 
     def register_model(self,folder,validator=None):
         p=self.item('models',folder)

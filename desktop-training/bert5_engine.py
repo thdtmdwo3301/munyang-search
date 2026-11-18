@@ -23,7 +23,7 @@ def fusion_head(text_dim,image_dim,hidden_dim,num_heads):
 class Bert5Engine:
     def __init__(self,store,model_id,device,spec=None):
         import os,torch
-        from worker import verify_files
+        from model_runner import verify_files
         self.store=store;self.package=store.item('models',model_id)
         self.spec=spec if spec is not None else read(self.package/'manifest.json')
         if self.spec.get('engine')!=ENGINE or self.spec.get('labels')!=LABELS:raise ValueError('5종 BERT 구성 또는 라벨 순서가 다릅니다.')
@@ -45,7 +45,7 @@ class Bert5Engine:
         import gc,torch
         from transformers import AutoConfig,AutoModel,AutoImageProcessor,AutoTokenizer
         from safetensors.torch import load_file
-        from worker import load_checkpoint
+        from model_runner import load_checkpoint
         if len(images)!=len(descriptions) or any(not isinstance(t,str) or not t.strip() for t in descriptions):
             raise ValueError('5종 BERT 모델은 이미지마다 설명문이 필요합니다. 이미지 전용 모델을 사용하거나 설명문을 입력하세요.')
         backbone=local_only(self.base_package/'backbone')
